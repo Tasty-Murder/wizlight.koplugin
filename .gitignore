@@ -1,0 +1,11 @@
+# KOReader runtime files
+*.log
+*.sdr/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+*.swp
+*~
