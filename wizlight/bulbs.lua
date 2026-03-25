@@ -28,6 +28,7 @@ function Bulbs.load()
     if not settings:readSetting("bulbs") then
         settings:saveSetting("bulbs", {})
         settings:saveSetting("order", {})
+        settings:saveSetting("scene_overrides", {})
         settings:flush()
     end
 end
@@ -35,6 +36,12 @@ end
 --- Write current state to disk.
 function Bulbs.flush()
     s():flush()
+end
+
+--- Reset the settings handle. Call from plugin lifecycle hooks on unload
+--- to ensure a clean handle on the next load.
+function Bulbs.close()
+    _s = nil
 end
 
 --- Return all bulbs in insertion order as an array of {name, ip, mac}.
@@ -60,6 +67,7 @@ end
 
 --- Set the active bulb by MAC address.
 function Bulbs.setActive(mac)
+    assert(type(mac) == "string" and mac ~= "", "setActive: mac must be a non-empty string")
     s():saveSetting("active", mac):flush()
 end
 
@@ -90,6 +98,8 @@ end
 function Bulbs.remove(mac)
     local settings = s()
     local bulbs = settings:readSetting("bulbs") or {}
+    if not bulbs[mac] then return end  -- nothing to do
+
     local order = settings:readSetting("order") or {}
 
     bulbs[mac] = nil
@@ -112,13 +122,16 @@ function Bulbs.remove(mac)
 end
 
 --- Update the stored IP for a known MAC (called after DHCP re-discovery).
+-- Returns true on success, or (nil, err) if the MAC is not in the registry.
 function Bulbs.updateIP(mac, ip)
     local settings = s()
     local bulbs = settings:readSetting("bulbs") or {}
-    if bulbs[mac] then
-        bulbs[mac].ip = ip
-        settings:saveSetting("bulbs", bulbs):flush()
+    if not bulbs[mac] then
+        return nil, "unknown mac: " .. tostring(mac)
     end
+    bulbs[mac].ip = ip
+    settings:saveSetting("bulbs", bulbs):flush()
+    return true
 end
 
 --- Return stored override params for a scene, or {} if none saved.
