@@ -169,4 +169,18 @@ function Wiz.discover(timeout)
     return bulbs
 end
 
+--- Blink the bulb off then on so the user can identify it physically.
+-- Short-circuits and returns (nil, err) if turnOff fails.
+function Wiz.blink(ip)
+    local ok, err = Wiz.turnOff(ip)
+    if not ok then return nil, err end
+    socket.sleep(0.6)
+    return Wiz.turnOn(ip)
+end
+
+--- Set the animation speed for dynamic scenes. speed is an integer 10–200.
+function Wiz.setSpeed(ip, speed)
+    return Wiz.setPilot(ip, { state = true, speed = speed })
+end
+
 return Wiz
