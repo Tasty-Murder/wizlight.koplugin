@@ -12,7 +12,6 @@ local InputDialog  = require("ui/widget/inputdialog")
 local SpinWidget   = require("ui/widget/spinwidget")
 local Trapper      = require("ui/trapper")
 local UIManager    = require("ui/uimanager")
-local logger       = require("logger")
 local _            = require("gettext")
 
 local Wiz   = require("wizlight.wiz")
@@ -41,11 +40,7 @@ end
 
 --- Activate a scene, merging any stored overrides into the setPilot params.
 local function activateScene(plugin, bulb, scene)
-    local override = Bulbs.getSceneOverride(scene.id)
-    local params   = { state = true, sceneId = scene.id }
-    if override.dimming then params.dimming = override.dimming end
-    if override.temp    then params.temp    = override.temp    end
-    if override.speed   then params.speed   = override.speed   end
+    local params      = Bulbs.buildSceneParams(scene.id)
     local result, err = Wiz.setPilot(bulb.ip, params)
     if result then
         plugin:notify(string.format(_("Scene: %s"), scene.name))

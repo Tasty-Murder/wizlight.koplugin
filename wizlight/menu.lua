@@ -139,11 +139,7 @@ local function buildScenesMenu(plugin)
             text     = scene.name,
             callback = function()
                 plugin:withBulb(function(bulb)
-                    local override = Bulbs.getSceneOverride(s.id)
-                    local params   = { state = true, sceneId = s.id }
-                    if override.dimming then params.dimming = override.dimming end
-                    if override.temp    then params.temp    = override.temp    end
-                    if override.speed   then params.speed   = override.speed   end
+                    local params      = Bulbs.buildSceneParams(s.id)
                     local result, err = Wiz.setPilot(bulb.ip, params)
                     if not result then
                         plugin:notify(plugin:errMsg(err), 4)

@@ -156,4 +156,15 @@ function Bulbs.clearSceneOverride(scene_id)
     settings:saveSetting("scene_overrides", overrides):flush()
 end
 
+--- Build a setPilot params table for the given scene, merging any stored overrides.
+-- Returns { state = true, sceneId = scene_id, [dimming=…], [temp=…], [speed=…] }
+function Bulbs.buildSceneParams(scene_id)
+    local override = Bulbs.getSceneOverride(scene_id)
+    local params   = { state = true, sceneId = scene_id }
+    if override.dimming then params.dimming = override.dimming end
+    if override.temp    then params.temp    = override.temp    end
+    if override.speed   then params.speed   = override.speed   end
+    return params
+end
+
 return Bulbs
