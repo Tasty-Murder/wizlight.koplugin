@@ -151,12 +151,34 @@ local function buildScenesMenu(plugin)
     return items
 end
 
+local function menuItemDiscoveryTimeout()
+    return {
+        text     = _("Discovery Timeout…"),
+        callback = function()
+            local saved = G_reader_settings:readSetting("wizlight_discovery_timeout") or 10
+            UIManager:show(SpinWidget:new{
+                title_text      = _("Discovery Timeout (seconds)"),
+                value           = saved,
+                value_min       = 3,
+                value_max       = 30,
+                value_step      = 1,
+                value_hold_step = 5,
+                ok_text         = _("Set"),
+                callback        = function(spin)
+                    G_reader_settings:saveSetting("wizlight_discovery_timeout", spin.value)
+                end,
+            })
+        end,
+    }
+end
+
 local function buildSettingsMenu(plugin)
     return {
         {
             text     = _("Manage Lights…"),
             callback = function() UI.showBulbManager(plugin) end,
         },
+        menuItemDiscoveryTimeout(),
     }
 end
 
