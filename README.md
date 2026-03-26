@@ -40,14 +40,13 @@ color temperature, and lighting scenes without leaving your book.
    (connect via USB and paste alongside the other plugin folders).
 4. Restart KOReader.
 
-The plugin appears as **WiZ Light** under the Tools menu (the spanner icon in
-the top bar).
+The plugin appears as **WiZ Light** under **Tools → More Tools**.
 
 ## Adding your first bulb
 
 Before you can control a bulb you need to add it to the registry.
 
-1. Open the Tools menu and tap **WiZ Light**.
+1. Open **Tools → More Tools** and tap **WiZ Light**.
 2. Tap **Settings → Manage Lights → Discover new lights…**
 3. The plugin scans your network for WiZ bulbs (this takes a few seconds).
 4. For each bulb found, tap **Blink it** — the bulb will flash off and back on.
@@ -61,7 +60,7 @@ receives commands.
 
 ## Usage
 
-All controls are under **Tools → WiZ Light**:
+All controls are under **Tools → More Tools → WiZ Light**:
 
 | Entry | What it does |
 |---|---|
@@ -100,7 +99,7 @@ Bind a gesture for faster access:
 
 ## Troubleshooting
 
-**"No WiZ light configured"** — Go to **Settings → Manage Lights** and run
+**"No WiZ light configured"** — Go to **Tools → More Tools → WiZ Light → Settings → Manage Lights** and run
 the discovery wizard to add at least one bulb.
 
 **"WiZ light unreachable"** — The bulb is off at the wall, out of range, or its
