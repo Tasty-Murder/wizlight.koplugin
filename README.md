@@ -110,6 +110,13 @@ find the new address automatically.
 **Bulb not found during discovery** — Make sure your Kindle and your WiZ bulb
 are on the same Wi-Fi network.
 
+## Acknowledgements
+
+The WiZ UDP protocol implementation was developed with reference to
+[pywizlight](https://github.com/sbidy/pywizlight), an open-source Python
+library for controlling WiZ bulbs. It was the primary source of inspiration
+for understanding the protocol.
+
 ## License
 
 [MIT](LICENSE) — Copyright (C) 2026 Tasty-Murder
