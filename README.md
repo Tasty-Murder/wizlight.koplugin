@@ -27,6 +27,9 @@ color temperature, and lighting scenes without leaving your book.
 - One or more WiZ smart bulbs on the same Wi-Fi network as your Kindle
 - No account, cloud service, or app required — the plugin communicates with
   your bulbs directly over your local network
+- The device must support `iptables` and KOReader must have permission to
+  modify firewall rules — the plugin opens a temporary rule during bulb
+  discovery to allow UDP responses from the network
 
 > **Note:** WiZ bulbs must be set up with the WiZ app at least once before
 > the plugin can discover them.
