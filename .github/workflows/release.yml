@@ -37,6 +37,9 @@ jobs:
           rm -rf /tmp/release/wizlight.koplugin/.claude
           rm -f  /tmp/release/wizlight.koplugin/.gitignore
           rm -f  /tmp/release/wizlight.koplugin/cliff.toml
+          rm -f  /tmp/release/wizlight.koplugin/README.md
+          rm -f  /tmp/release/wizlight.koplugin/CHANGES.md
+          rm -f  /tmp/release/wizlight.koplugin/LICENSE
           cd /tmp/release
           zip -r wizlight.koplugin.zip wizlight.koplugin/
 
