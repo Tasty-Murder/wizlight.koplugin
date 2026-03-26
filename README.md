@@ -1,6 +1,6 @@
 # wizlight.koplugin
 
-Control WiZ smart bulbs directly from KOReader on Kindle. Adjust brightness,
+Control [WiZ smart bulbs](https://www.wizconnected.com/en-us) directly from KOReader on Kindle. Adjust brightness,
 color temperature, and lighting scenes without leaving your book.
 
 ## Features
