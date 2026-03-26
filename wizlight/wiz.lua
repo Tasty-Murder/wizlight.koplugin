@@ -87,11 +87,11 @@ function Wiz.setScene(ip, scene_id)
 end
 
 --- Broadcast a registration message and collect all responding WiZ bulbs.
--- Runs for `timeout` seconds (default 5) and returns an array of
+-- Runs for `timeout` seconds (default 10) and returns an array of
 -- `{ ip = "...", mac = "..." }` tables.  The caller is responsible for
 -- opening the firewall before calling this (see WizLight:discoverBulbs).
 function Wiz.discover(timeout)
-    timeout = timeout or 5
+    timeout = timeout or 10
 
     -- Determine the local IP via KOReader's NetworkMgr + UDP routing trick.
     local local_ip = "1.2.3.4"

@@ -389,9 +389,10 @@ function UI.showDiscoveryWizard(plugin)
         return
     end
 
+    local timeout = G_reader_settings:readSetting("wizlight_discovery_timeout") or 10
     iptablesOpen()
     Trapper:info(_("Scanning for WiZ lights…"))
-    local found_bulbs, err = Wiz.discover()
+    local found_bulbs, err = Wiz.discover(timeout)
     Trapper:clear()
     iptablesClose()
 
@@ -560,9 +561,10 @@ function UI.rediscoverBulb(plugin, mac, retry_fn)
         return
     end
 
+    local timeout = G_reader_settings:readSetting("wizlight_discovery_timeout") or 10
     iptablesOpen()
     Trapper:info(_("Scanning for WiZ lights…"))
-    local bulbs, err = Wiz.discover()
+    local bulbs, err = Wiz.discover(timeout)
     Trapper:clear()
     iptablesClose()
 
