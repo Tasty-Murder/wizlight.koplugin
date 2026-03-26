@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # git-cliff needs full history to read all tags
+
+      - name: Generate changelog
+        id: git-cliff
+        uses: orhun/git-cliff-action@v3
+        with:
+          config: cliff.toml
+          args: --verbose --current --strip all
+        env:
+          OUTPUT: CHANGES.md
+
+      - name: Build release archive
+        run: |
+          mkdir -p /tmp/release/wizlight.koplugin
+          cp -r . /tmp/release/wizlight.koplugin
+          rm -rf /tmp/release/wizlight.koplugin/.git
+          rm -rf /tmp/release/wizlight.koplugin/.github
+          rm -rf /tmp/release/wizlight.koplugin/docs
+          rm -rf /tmp/release/wizlight.koplugin/.claude
+          rm -f  /tmp/release/wizlight.koplugin/.gitignore
+          rm -f  /tmp/release/wizlight.koplugin/cliff.toml
+          cd /tmp/release
+          zip -r wizlight.koplugin.zip wizlight.koplugin/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "WiZ Light ${{ github.ref_name }}"
+          body: "${{ steps.git-cliff.outputs.content }}"
+          files: /tmp/release/wizlight.koplugin.zip
+          draft: false
+          prerelease: false
