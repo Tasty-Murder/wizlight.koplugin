@@ -21,6 +21,13 @@ color temperature, and lighting scenes without leaving your book.
 - Automatic DHCP recovery — if a bulb's IP changes after a router restart,
   the plugin detects this and offers to re-discover the new address
 
+## Platform
+
+**Kindle only.** This plugin is designed for KOReader running on Kindle devices.
+The discovery mechanism requires `iptables` with root access, which Android's
+security model does not permit. The spirit of this plugin is to let you control
+your lights from your Kindle — without reaching for your phone.
+
 ## Prerequisites
 
 - KOReader installed on a Kindle with Wi-Fi
@@ -49,6 +56,8 @@ The plugin appears as **WiZ Light** under **Tools → More Tools**.
 
 Before you can control a bulb you need to add it to the registry.
 
+**Option A — automatic discovery (recommended):**
+
 1. Open **Tools → More Tools** and tap **WiZ Light**.
 2. Tap **Settings → Manage Lights → Discover new lights…**
 3. The plugin scans your network for WiZ bulbs (this takes a few seconds).
@@ -56,6 +65,15 @@ Before you can control a bulb you need to add it to the registry.
 5. If it was your bulb, tap **Yes — name it**, enter a room name (e.g. *Bedroom*),
    and tap **Save**.
 6. Repeat for any additional bulbs.
+
+**Option B — add by IP address:**
+
+If discovery does not find your bulb, you can add it manually:
+
+1. Find the bulb's IP address in your router's DHCP client list or the WiZ app.
+2. Tap **Settings → Manage Lights → Add light by IP…** and enter the address.
+3. The plugin contacts the bulb directly, then runs the same blink-to-verify
+   and naming flow as above.
 
 The first bulb you add becomes the active bulb automatically. If you have more
 than one, tap **Switch Bulb…** in the Controls panel to change which one
@@ -73,7 +91,9 @@ All controls are under **Tools → More Tools → WiZ Light**:
 | Color Temperature… | Opens a dial to set colour warmth (2200–6500 K) |
 | Effect Speed… | Opens a dial to set animation speed for dynamic scenes (10–200) |
 | Scenes | Opens the scenes panel |
-| Settings → Manage Lights | Add, remove, or switch between bulbs |
+| Settings → Manage Lights → Discover new lights… | Scan the network for WiZ bulbs |
+| Settings → Manage Lights → Add light by IP… | Add a bulb by entering its IP address directly |
+| Settings → Manage Lights | Switch between or remove saved bulbs |
 
 ### Scenes
 
@@ -102,8 +122,8 @@ Bind a gesture for faster access:
 
 ## Troubleshooting
 
-**"No WiZ light configured"** — Go to **Tools → More Tools → WiZ Light → Settings → Manage Lights** and run
-the discovery wizard to add at least one bulb.
+**"No WiZ light configured"** — Go to **Tools → More Tools → WiZ Light → Settings → Manage Lights** and use
+**Discover new lights…** or **Add light by IP…** to add at least one bulb.
 
 **"WiZ light unreachable"** — The bulb is off at the wall, out of range, or its
 IP has changed. Tap **Re-discover** in the dialog that appears; the plugin will
