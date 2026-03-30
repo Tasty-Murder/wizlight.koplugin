@@ -1,0 +1,61 @@
+name: Bug Report
+description: Report a problem with wizlight.koplugin
+labels: ["bug"]
+body:
+  - type: input
+    id: koreader_version
+    attributes:
+      label: KOReader version
+      placeholder: "e.g. 2024.07"
+    validations:
+      required: true
+
+  - type: input
+    id: kindle_model
+    attributes:
+      label: Kindle model
+      placeholder: "e.g. Kindle Paperwhite 11th generation"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin_version
+    attributes:
+      label: Plugin version
+      placeholder: "e.g. 1.2.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open WiZ Light from Tools → More Tools
+        2. Tap ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      description: >
+        Paste any relevant lines from the KOReader log
+        (`koreader/crash.log` or the in-app log viewer).
+      render: text

@@ -325,6 +325,14 @@ function UI.showBulbManager(plugin)
         end,
     }})
 
+    table.insert(buttons, {{
+        text     = _("Add light by IP…"),
+        callback = function()
+            UIManager:close(panel)
+            UI.showAddByIP(plugin)
+        end,
+    }})
+
     if #all > 0 then
         table.insert(buttons, {{
             text     = _("Remove a light…"),
@@ -398,7 +406,7 @@ function UI.showDiscoveryWizard(plugin)
 
     if not found_bulbs then
         plugin:notify(string.format(
-            _("Discovery failed: %s\nUse 'Manage Lights' to add an IP manually."),
+            _("Discovery failed: %s\nTry 'Add light by IP…' in Manage Lights."),
             err or "unknown error"), 6)
         return
     end
@@ -426,23 +434,9 @@ function UI.showDiscoveryWizard(plugin)
     end)
 end
 
---- Process new_bulbs[index] through the blink → confirm → name flow,
---- then recurse to the next bulb. Shows summary when all are done.
-function UI._wizardStep(plugin, new_bulbs, index, added_count)
-    if index > #new_bulbs then
-        if added_count > 0 then
-            plugin:notify(string.format(_("%d light(s) added."), added_count))
-        else
-            plugin:notify(_("No new lights added."), 3)
-        end
-        return
-    end
-
-    local found     = new_bulbs[index]
-    local ip        = found.ip
-    local mac       = found.mac
-    local advance   = function(count) UI._wizardStep(plugin, new_bulbs, index + 1, count) end
-
+--- Show the blink → confirm → name dialog chain for a single bulb.
+-- `on_done(added)` is called with `true` if the bulb was saved, `false` otherwise.
+function UI._blinkAndName(plugin, ip, mac, on_done)
     local blink_dialog
     blink_dialog = ButtonDialog:new{
         title = string.format(
@@ -478,7 +472,7 @@ function UI._wizardStep(plugin, new_bulbs, index, added_count)
                                                 text     = _("Cancel"),
                                                 callback = function()
                                                     UIManager:close(name_dialog)
-                                                    advance(added_count)
+                                                    on_done(false)
                                                 end,
                                             },
                                             {
@@ -489,9 +483,9 @@ function UI._wizardStep(plugin, new_bulbs, index, added_count)
                                                     UIManager:close(name_dialog)
                                                     if name and name ~= "" then
                                                         Bulbs.add(name, ip, mac)
-                                                        advance(added_count + 1)
+                                                        on_done(true)
                                                     else
-                                                        advance(added_count)
+                                                        on_done(false)
                                                     end
                                                 end,
                                             },
@@ -499,16 +493,13 @@ function UI._wizardStep(plugin, new_bulbs, index, added_count)
                                     }
                                     UIManager:show(name_dialog)
                                     name_dialog:onShowKeyboard()
-                                    -- If the user submits an empty name, the Save
-                                    -- callback silently skips adding the bulb and
-                                    -- advances to the next one. This is intentional.
                                 end,
                             },
                             {
                                 text     = _("Skip"),
                                 callback = function()
                                     UIManager:close(confirm_dialog)
-                                    advance(added_count)
+                                    on_done(false)
                                 end,
                             },
                         }},
@@ -520,12 +511,80 @@ function UI._wizardStep(plugin, new_bulbs, index, added_count)
                 text     = _("Skip"),
                 callback = function()
                     UIManager:close(blink_dialog)
-                    advance(added_count)
+                    on_done(false)
                 end,
             },
         }},
     }
     UIManager:show(blink_dialog)
+end
+
+--- Process new_bulbs[index] through the blink → confirm → name flow,
+--- then recurse to the next bulb. Shows summary when all are done.
+function UI._wizardStep(plugin, new_bulbs, index, added_count)
+    if index > #new_bulbs then
+        if added_count > 0 then
+            plugin:notify(string.format(_("%d light(s) added."), added_count))
+        else
+            plugin:notify(_("No new lights added."), 3)
+        end
+        return
+    end
+
+    local found = new_bulbs[index]
+    UI._blinkAndName(plugin, found.ip, found.mac, function(added)
+        UI._wizardStep(plugin, new_bulbs, index + 1, added_count + (added and 1 or 0))
+    end)
+end
+
+--- Prompt for an IP address, probe the bulb for its MAC, then run the
+--- blink → confirm → name wizard for that single bulb.
+function UI.showAddByIP(plugin)
+    local ip_dialog
+    ip_dialog = InputDialog:new{
+        title      = _("Enter the bulb's IP address"),
+        input_hint = _("e.g. 192.168.1.42"),
+        buttons    = {{
+            {
+                text     = _("Cancel"),
+                callback = function() UIManager:close(ip_dialog) end,
+            },
+            {
+                text             = _("Add"),
+                is_enter_default = true,
+                callback = function()
+                    local ip = ip_dialog:getInputText()
+                    UIManager:close(ip_dialog)
+                    if not ip or ip == "" then return end
+
+                    Trapper:wrap(function()
+                        local timeout = G_reader_settings:readSetting("wizlight_discovery_timeout") or 10
+                        iptablesOpen()
+                        Trapper:info(_("Contacting light…"))
+                        local result, err = Wiz.probe(ip, timeout)
+                        Trapper:clear()
+                        iptablesClose()
+
+                        if not result then
+                            plugin:notify(string.format(
+                                _("Could not reach light at %s: %s"), ip, err or "?"), 5)
+                            return
+                        end
+
+                        UIManager:nextTick(function()
+                            UI._blinkAndName(plugin, result.ip, result.mac, function(added)
+                                if added then
+                                    plugin:notify(_("1 light added."))
+                                end
+                            end)
+                        end)
+                    end)
+                end,
+            },
+        }},
+    }
+    UIManager:show(ip_dialog)
+    ip_dialog:onShowKeyboard()
 end
 
 -- ── DHCP failure dialog ───────────────────────────────────────────────────────

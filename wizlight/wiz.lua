@@ -169,6 +169,70 @@ function Wiz.discover(timeout)
     return bulbs
 end
 
+--- Send a unicast registration message to a single IP and return its identity.
+-- Useful for adding a bulb by known IP when broadcast discovery is not desired.
+-- The caller is responsible for opening the firewall before calling this.
+-- Returns `{ ip = ip, mac = "..." }` on success or `(nil, error_string)` on failure.
+function Wiz.probe(ip, timeout)
+    timeout = timeout or 10
+
+    local local_ip = "1.2.3.4"
+    local NetworkMgr = require("ui/network/manager")
+    if NetworkMgr:getNetworkInterfaceName() then
+        local probe = socket.udp()
+        if probe then
+            if probe:setpeername("203.0.113.1", 53) then
+                local addr = probe:getsockname()
+                if addr and addr ~= "0.0.0.0" and addr ~= "*" then
+                    local_ip = addr
+                end
+            end
+            probe:close()
+        end
+    end
+
+    local msg = rapidjson.encode({
+        method = "registration",
+        params = { phoneMac = "AAAAAAAAAAAA", register = false,
+                   phoneIp = local_ip, id = "1" },
+    })
+
+    local udp = socket.udp()
+    udp:setoption("reuseaddr", true)
+    udp:setsockname("*", WIZ_PORT)
+    udp:settimeout(1)
+
+    local sent, send_err = udp:sendto(msg, ip, WIZ_PORT)
+    if not sent then
+        udp:close()
+        logger.warn("wizlight probe: sendto failed:", send_err)
+        return nil, send_err
+    end
+    logger.info("wizlight probe: sent registration to", ip)
+
+    local deadline = socket.gettime() + timeout
+    while socket.gettime() < deadline do
+        local data, src_ip = udp:receivefrom()
+        if data then
+            logger.info("wizlight probe: received", #data, "bytes from", src_ip)
+            local decoded, dec_err = rapidjson.decode(data)
+            if decoded then
+                local result = decoded.result or decoded.r
+                local mac = result and result.mac
+                if mac then
+                    udp:close()
+                    return { ip = src_ip, mac = mac }
+                end
+            else
+                logger.warn("wizlight probe: JSON decode failed:", dec_err)
+            end
+        end
+    end
+
+    udp:close()
+    return nil, "timeout – bulb did not respond"
+end
+
 --- Blink the bulb off then on so the user can identify it physically.
 -- Short-circuits and returns (nil, err) if turnOff fails.
 function Wiz.blink(ip)
