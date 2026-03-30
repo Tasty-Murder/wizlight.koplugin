@@ -9,3 +9,6 @@
 .vscode/
 *.swp
 *~
+
+# Claude Code
+.claude/
