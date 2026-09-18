@@ -198,8 +198,8 @@ end
 --- reasoning as activateScene() — Default Scene fully replaces whatever
 --- was showing.
 function WizLight:activateDefaultScene(bulb)
-    local params = Bulbs.getDefaultScene()
-    if not params then
+    local saved = Bulbs.getDefaultScene()
+    if not saved then
         self:notify(_([[No default scene set yet.
 Hold "Default Scene" to save your current light settings as the default.]]), 5)
         return
@@ -207,6 +207,15 @@ Hold "Default Scene" to save your current light settings as the default.]]), 5)
     if Bulbs.getReadingModeState(bulb.mac).active then
         Bulbs.setReadingModeState(bulb.mac, false, nil)
     end
+    -- Self-healing: a default saved before the sceneId=0 fix (or one
+    -- captured while getPilot happened not to report sceneId at all) may
+    -- have no sceneId of its own. Default Scene means "plain white, no
+    -- scene" unless it was explicitly captured while a scene was showing
+    -- (in which case saved.sceneId is already that scene's real id), so
+    -- default the outgoing copy to 0 without touching the stored value.
+    local params = {}
+    for k, v in pairs(saved) do params[k] = v end
+    if params.sceneId == nil then params.sceneId = 0 end
     if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip) then
         self:notify(string.format(_("Default scene activated: %s"), Wiz.describeParams(params)), 4)
     end
