@@ -6,15 +6,23 @@ color temperature, and lighting scenes without leaving your book.
 ## Features
 
 - Toggle your light on or off from the menu or a custom gesture
-- **Reading Mode** — one tap to warm white (3000 K, 70% brightness)
+- **Reading Mode** — toggle to warm white (3000 K, 70% brightness) and back;
+  a checkmark shows when it's active, and turning it off restores exactly
+  what the bulb was doing before you switched it on
+- **Default Scene** — a one-tap preset you configure yourself: dial the
+  bulb in however you like it with the other controls, then hold the
+  button to save it; tap to recall it any time
 - Brightness control (10–100%)
 - Color temperature control (2200–6500 K)
 - Effect speed control for animated scenes (10–200)
-- 11 curated scenes split into two types:
-  - *Static* (solid colour): Warm White, Daylight, Cool White, Night Light, Focus
-  - *Dynamic* (animated): Cozy, Relax, Candlelight, Fireplace, Wake Up, Bedtime
-- Per-scene customisation — save preferred brightness, colour temperature, or speed
-  per scene; scenes with saved settings are marked with *
+- 11 curated scenes, grouped into **Lighting Themes** (Warm White, Daylight,
+  Cool White, Night Light, Focus, Relax, Wake Up, Bedtime) and **Animated
+  Scenes** (Cozy, Candlelight, Golden White) — grouped by which scenes
+  genuinely animate, per WiZ's own per-scene compatibility reference, not
+  just a rough guess
+- Per-scene customisation — save whichever parameters a given scene actually
+  supports (brightness, colour temperature, and/or animation speed); scenes
+  with saved settings are marked with *
 - Named multi-bulb registry — save bulbs by room name and switch between them
 - Blink-to-verify discovery — the wizard blinks each found bulb so you can
   confirm which physical light you are adding
@@ -86,22 +94,31 @@ All controls are under **Tools → More Tools → WiZ Light**:
 | Entry | What it does |
 |---|---|
 | Toggle On / Off | Turns the active bulb on or off |
-| Reading Mode | Sets warm white (3000 K, 70%) |
+| Default Scene | Tap to activate your saved preset; hold to save the bulb's current settings as the new preset |
+| Reading Mode | Toggles warm white (3000 K, 70%); shows a checkmark when active, and restores the previous state when turned off |
 | Brightness… | Opens a dial to set brightness (10–100%) |
 | Color Temperature… | Opens a dial to set colour warmth (2200–6500 K) |
 | Effect Speed… | Opens a dial to set animation speed for dynamic scenes (10–200) |
-| Scenes | Opens the scenes panel |
+| Scenes | Opens the Lighting Themes / Animated Scenes chooser |
 | Settings → Manage Lights → Discover new lights… | Scan the network for WiZ bulbs |
 | Settings → Manage Lights → Add light by IP… | Add a bulb by entering its IP address directly |
 | Settings → Manage Lights | Switch between or remove saved bulbs |
 
 ### Scenes
 
-Tap a scene name to activate it. Tap **Edit…** next to a scene to customise it:
+Scenes are split into two groups so you're never guessing which ones
+animate:
 
-- All scenes: brightness
-- Static scenes (Warm White, Daylight, etc.): also colour temperature
-- Dynamic scenes (Cozy, Candlelight, etc.): also animation speed
+- **Lighting Themes** — fixed lighting moods (Warm White, Daylight, Cool
+  White, Night Light, Focus, Relax, Wake Up, Bedtime)
+- **Animated Scenes** — genuinely dynamic effects (Cozy, Candlelight, Golden
+  White)
+
+Tap a scene name to activate it. Tap **Edit…** next to a scene to customise
+whichever parameters that scene actually supports — most offer brightness,
+the plain white-tone themes also offer colour temperature, and the animated
+scenes also offer speed. (Night Light has neither adjustable brightness nor
+speed on real WiZ hardware, so it has no **Edit…** button at all.)
 
 Saved customisations are applied every time you activate that scene. A `*`
 appears next to scenes with saved customisations. Tap **Reset to defaults** in
