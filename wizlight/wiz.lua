@@ -43,6 +43,39 @@ local function sendUDP(ip, message)
     return decoded
 end
 
+--- Determine this device's local IP via KOReader's NetworkMgr + UDP routing
+--- trick (connect a UDP socket to a public address and read back the local
+--- address the kernel picked for the route, without sending any packet).
+local function resolveLocalIP()
+    local local_ip = "1.2.3.4"
+    local NetworkMgr = require("ui/network/manager")
+    if NetworkMgr:getNetworkInterfaceName() then
+        local probe = socket.udp()
+        if probe then
+            if probe:setpeername("203.0.113.1", 53) then
+                local addr = probe:getsockname()
+                if addr and addr ~= "0.0.0.0" and addr ~= "*" then
+                    local_ip = addr
+                end
+            end
+            probe:close()
+        end
+    end
+    return local_ip
+end
+
+--- Build the UDP "registration" message bulbs treat as a discovery probe.
+--- `register = false` tells the bulb to remove any prior registration for
+--- this phoneIp/phoneMac rather than actually pairing — the IP/MAC given
+--- don't need to be real for that reason.
+local function buildRegistrationMessage(local_ip)
+    return rapidjson.encode({
+        method = "registration",
+        params = { phoneMac = "AAAAAAAAAAAA", register = false,
+                   phoneIp = local_ip, id = "1" },
+    })
+end
+
 --- Send a `getPilot` request and return the bulb state table.
 function Wiz.getPilot(ip)
     local msg = rapidjson.encode({
@@ -81,33 +114,45 @@ function Wiz.setColorTemp(ip, temp)
     return Wiz.setPilot(ip, { state = true, temp = temp })
 end
 
---- Activate one of the 35 built-in WiZ scenes by ID.
-function Wiz.setScene(ip, scene_id)
-    return Wiz.setPilot(ip, { state = true, sceneId = scene_id })
+--- Set the animation speed for dynamic scenes. speed is an integer 10–200.
+-- Design note: unlike the other setters, this deliberately does NOT send
+-- `state = true` alongside `speed`. The WiZ firmware ignores a speed change
+-- bundled in the same setPilot call as `state` (this matches pywizlight's
+-- own set_speed(), which carries the same warning) — the typical use of
+-- this call is nudging the speed of a scene that's already running, where
+-- `state` isn't needed anyway.
+function Wiz.setSpeed(ip, speed)
+    return Wiz.setPilot(ip, { speed = speed })
+end
+
+-- Keys from a getPilot `.result` table that are valid to pass straight back
+-- into a setPilot call.
+local PILOT_PARAM_KEYS = {
+    "state", "sceneId", "temp", "dimming", "speed", "r", "g", "b", "c", "w",
+}
+
+--- Convert a decoded getPilot `.result` table into a setPilot-safe params
+--- table, passing through only the known controllable keys that are
+--- present. Used to snapshot a bulb's current state so it can be restored
+--- later (Reading Mode revert, Default Scene "save current").
+function Wiz.pilotToParams(result)
+    local params = {}
+    for _, key in ipairs(PILOT_PARAM_KEYS) do
+        if result[key] ~= nil then
+            params[key] = result[key]
+        end
+    end
+    return params
 end
 
 --- Broadcast a registration message and collect all responding WiZ bulbs.
 -- Runs for `timeout` seconds (default 10) and returns an array of
 -- `{ ip = "...", mac = "..." }` tables.  The caller is responsible for
--- opening the firewall before calling this (see WizLight:discoverBulbs).
+-- opening the firewall before calling this (see UI.showDiscoveryWizard).
 function Wiz.discover(timeout)
     timeout = timeout or 10
 
-    -- Determine the local IP via KOReader's NetworkMgr + UDP routing trick.
-    local local_ip = "1.2.3.4"
-    local NetworkMgr = require("ui/network/manager")
-    if NetworkMgr:getNetworkInterfaceName() then
-        local probe = socket.udp()
-        if probe then
-            if probe:setpeername("203.0.113.1", 53) then
-                local addr = probe:getsockname()
-                if addr and addr ~= "0.0.0.0" and addr ~= "*" then
-                    local_ip = addr
-                end
-            end
-            probe:close()
-        end
-    end
+    local local_ip = resolveLocalIP()
     logger.info("wizlight discover: local_ip =", local_ip)
 
     local broadcast_ip = "255.255.255.255"
@@ -115,22 +160,23 @@ function Wiz.discover(timeout)
     if prefix then broadcast_ip = prefix .. ".255" end
     logger.info("wizlight discover: broadcast_ip =", broadcast_ip)
 
-    local msg = rapidjson.encode({
-        method = "registration",
-        params = { phoneMac = "AAAAAAAAAAAA", register = false,
-                   phoneIp = local_ip, id = "1" },
-    })
+    local msg = buildRegistrationMessage(local_ip)
 
     local udp = socket.udp()
     -- WiZ bulbs reply to phoneIp:38899 (not the sender's ephemeral port).
     -- Bind to WIZ_PORT so those unicast replies reach this socket.
     -- reuseaddr allows re-running discovery in quick succession.
     udp:setoption("reuseaddr", true)
-    udp:setsockname("*", WIZ_PORT)
-    local ok, err = udp:setoption("broadcast", true)
-    if not ok then
+    local bind_ok, bind_err = udp:setsockname("*", WIZ_PORT)
+    if not bind_ok then
         udp:close()
-        return nil, "broadcast not supported: " .. (err or "?")
+        logger.warn("wizlight discover: bind failed:", bind_err)
+        return nil, "could not bind UDP port " .. WIZ_PORT .. ": " .. (bind_err or "?")
+    end
+    local bcast_ok, bcast_err = udp:setoption("broadcast", true)
+    if not bcast_ok then
+        udp:close()
+        return nil, "broadcast not supported: " .. (bcast_err or "?")
     end
     udp:settimeout(1)
 
@@ -145,6 +191,10 @@ function Wiz.discover(timeout)
     local bulbs    = {}
     local seen     = {}
     local deadline = socket.gettime() + timeout
+    -- Re-send the broadcast every second for the whole window: a single
+    -- broadcast frame is easy to lose on Wi-Fi, and bulbs that miss it
+    -- would otherwise sit out the entire scan.
+    local next_broadcast = socket.gettime() + 1
 
     while socket.gettime() < deadline do
         local data, src_ip = udp:receivefrom()
@@ -163,6 +213,12 @@ function Wiz.discover(timeout)
                 logger.warn("wizlight discover: JSON decode failed:", dec_err)
             end
         end
+
+        local now = socket.gettime()
+        if now >= next_broadcast then
+            udp:sendto(msg, broadcast_ip, WIZ_PORT)
+            next_broadcast = now + 1
+        end
     end
 
     udp:close()
@@ -176,30 +232,17 @@ end
 function Wiz.probe(ip, timeout)
     timeout = timeout or 10
 
-    local local_ip = "1.2.3.4"
-    local NetworkMgr = require("ui/network/manager")
-    if NetworkMgr:getNetworkInterfaceName() then
-        local probe = socket.udp()
-        if probe then
-            if probe:setpeername("203.0.113.1", 53) then
-                local addr = probe:getsockname()
-                if addr and addr ~= "0.0.0.0" and addr ~= "*" then
-                    local_ip = addr
-                end
-            end
-            probe:close()
-        end
-    end
-
-    local msg = rapidjson.encode({
-        method = "registration",
-        params = { phoneMac = "AAAAAAAAAAAA", register = false,
-                   phoneIp = local_ip, id = "1" },
-    })
+    local local_ip = resolveLocalIP()
+    local msg = buildRegistrationMessage(local_ip)
 
     local udp = socket.udp()
     udp:setoption("reuseaddr", true)
-    udp:setsockname("*", WIZ_PORT)
+    local bind_ok, bind_err = udp:setsockname("*", WIZ_PORT)
+    if not bind_ok then
+        udp:close()
+        logger.warn("wizlight probe: bind failed:", bind_err)
+        return nil, "could not bind UDP port " .. WIZ_PORT .. ": " .. (bind_err or "?")
+    end
     udp:settimeout(1)
 
     local sent, send_err = udp:sendto(msg, ip, WIZ_PORT)
@@ -240,11 +283,6 @@ function Wiz.blink(ip)
     if not ok then return nil, err end
     socket.sleep(0.6)
     return Wiz.turnOn(ip)
-end
-
---- Set the animation speed for dynamic scenes. speed is an integer 10–200.
-function Wiz.setSpeed(ip, speed)
-    return Wiz.setPilot(ip, { state = true, speed = speed })
 end
 
 return Wiz
