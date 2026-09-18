@@ -60,6 +60,9 @@ end
 -- ── control panel ─────────────────────────────────────────────────────────────
 
 function UI.showControlPanel(plugin, bulb)
+    local reading_active = Bulbs.getReadingModeState(bulb.mac).active
+    local reading_mode_text = reading_active and _("Reading Mode ✓ (tap to exit)") or _("Reading Mode")
+
     local panel
     panel = ButtonDialog:new{
         title = string.format(_("WiZ Light Controls — %s"), bulb.name),
@@ -68,14 +71,20 @@ function UI.showControlPanel(plugin, bulb)
                callback = function()
                    plugin:toggleBulb(bulb.ip)
                end }},
-            {{ text = _("Reading Mode"),
+            {{ text = _("Default Scene"),
                callback = function()
-                   local result, err = Wiz.setPilot(bulb.ip, { state = true, temp = 3000, dimming = 70 })
-                   if result then
-                       plugin:notify(_("Reading Mode activated"))
-                   else
-                       plugin:notify(plugin:errMsg(err), 4)
-                   end
+                   UIManager:close(panel)
+                   plugin:activateDefaultScene(bulb)
+               end },
+             { text = _("Set Current…"),
+               callback = function()
+                   UIManager:close(panel)
+                   plugin:saveDefaultScene(bulb)
+               end }},
+            {{ text = reading_mode_text,
+               callback = function()
+                   UIManager:close(panel)
+                   plugin:toggleReadingMode(bulb)
                end }},
             {{ text = _("Brightness…"),
                callback = function()
@@ -130,29 +139,35 @@ end
 
 -- ── scenes panel ─────────────────────────────────────────────────────────────
 
-function UI.showScenesPanel(plugin, bulb)
+--- Show the filtered scene list for one group. `animated` selects scenes
+-- whose animation-speed override actually does anything on the bulb (see
+-- the SCENES table comment in main.lua) vs. the plain lighting themes.
+local function showSceneGroup(plugin, bulb, title, animated)
     local panel
     local buttons = {}
 
-    for _i, scene in ipairs(plugin.SCENES) do
-        local s = scene
-        -- Two buttons per row: scene name (activate) | Edit…
-        table.insert(buttons, {
-            {
-                text     = sceneLabel(s),
+    for _, scene in ipairs(plugin.SCENES) do
+        if scene.speed == animated then
+            -- One button to activate; a second "Edit…" only if the scene
+            -- actually has an overridable parameter (Night Light has none).
+            local row = {{
+                text     = sceneLabel(scene),
                 callback = function()
                     UIManager:close(panel)
-                    activateScene(plugin, bulb, s)
+                    activateScene(plugin, bulb, scene)
                 end,
-            },
-            {
-                text     = _("Edit…"),
-                callback = function()
-                    UIManager:close(panel)
-                    UI.showSceneEditor(plugin, s)
-                end,
-            },
-        })
+            }}
+            if scene.dimming or scene.speed or scene.temp then
+                table.insert(row, {
+                    text     = _("Edit…"),
+                    callback = function()
+                        UIManager:close(panel)
+                        UI.showSceneEditor(plugin, scene)
+                    end,
+                })
+            end
+            table.insert(buttons, row)
+        end
     end
 
     table.insert(buttons, {{
@@ -161,11 +176,36 @@ function UI.showScenesPanel(plugin, bulb)
     }})
 
     panel = ButtonDialog:new{
-        title   = _("Scenes"),
+        title   = title,
         buttons = buttons,
     }
     UIManager:show(panel)
     plugin._scenes_panel = panel
+end
+
+--- Top-level Scenes chooser: pick a group before showing scenes, so
+-- lighting themes and animated scenes are never mixed in one list.
+function UI.showScenesPanel(plugin, bulb)
+    local chooser
+    chooser = ButtonDialog:new{
+        title   = _("Scenes"),
+        buttons = {
+            {{ text = _("Lighting Themes…"),
+               callback = function()
+                   UIManager:close(chooser)
+                   showSceneGroup(plugin, bulb, _("Lighting Themes"), false)
+               end }},
+            {{ text = _("Animated Scenes…"),
+               callback = function()
+                   UIManager:close(chooser)
+                   showSceneGroup(plugin, bulb, _("Animated Scenes"), true)
+               end }},
+            {{ text = _("Close"),
+               callback = function() UIManager:close(chooser) end }},
+        },
+    }
+    UIManager:show(chooser)
+    plugin._scenes_panel = chooser
 end
 
 -- ── scene editor ─────────────────────────────────────────────────────────────
@@ -176,8 +216,8 @@ end
 -- spec's single-Save model.
 
 function UI.showSceneEditor(plugin, scene)
-    local override   = Bulbs.getSceneOverride(scene.id)
-    local is_static  = scene.kind == "static"
+    local override = Bulbs.getSceneOverride(scene.id)
+    local editor
 
     local function openBrightnessEditor()
         UIManager:show(SpinWidget:new{
@@ -233,25 +273,31 @@ function UI.showSceneEditor(plugin, scene)
         })
     end
 
-    local type_specific_button = is_static
-        and { text = _("Color Temperature…"), callback = function() openColorTempEditor() end }
-        or  { text = _("Animation Speed…"),   callback = function() openSpeedEditor()     end }
+    -- Only offer overrides the scene actually honours (see the SCENES table
+    -- comment in main.lua). Night Light has none, so it gets no knobs at all.
+    local buttons = {}
+    if scene.dimming then
+        table.insert(buttons, {{ text = _("Brightness…"), callback = openBrightnessEditor }})
+    end
+    if scene.temp then
+        table.insert(buttons, {{ text = _("Color Temperature…"), callback = openColorTempEditor }})
+    end
+    if scene.speed then
+        table.insert(buttons, {{ text = _("Animation Speed…"), callback = openSpeedEditor }})
+    end
+    table.insert(buttons, {{
+        text     = _("Reset to defaults"),
+        callback = function()
+            UIManager:close(editor)
+            Bulbs.clearSceneOverride(scene.id)
+            plugin:notify(string.format(_("Reset %s to defaults"), scene.name))
+        end,
+    }})
+    table.insert(buttons, {{ text = _("Cancel"), callback = function() UIManager:close(editor) end }})
 
-    local editor
     editor = ButtonDialog:new{
         title   = string.format(_("Edit Scene: %s"), scene.name),
-        buttons = {
-            {{ text = _("Brightness…"),        callback = openBrightnessEditor }},
-            { type_specific_button },
-            {{ text = _("Reset to defaults"),
-               callback = function()
-                   UIManager:close(editor)
-                   Bulbs.clearSceneOverride(scene.id)
-                   plugin:notify(string.format(_("Reset %s to defaults"), scene.name))
-               end }},
-            {{ text = _("Cancel"),
-               callback = function() UIManager:close(editor) end }},
-        },
+        buttons = buttons,
     }
     UIManager:show(editor)
 end
@@ -268,7 +314,7 @@ function UI.showBulbSwitcher(plugin, current_mac)
     local panel
     local buttons = {}
 
-    for _i, bulb in ipairs(all) do
+    for _, bulb in ipairs(all) do
         local b = bulb
         local label = b.mac == current_mac
             and string.format("[✓] %s", b.name)
@@ -303,7 +349,7 @@ function UI.showBulbManager(plugin)
     local panel
     local buttons = {}
 
-    for _i, bulb in ipairs(all) do
+    for _, bulb in ipairs(all) do
         local b       = bulb
         local prefix  = (active and active.mac == b.mac) and "[✓] " or "[ ] "
         local label   = string.format("%s%s   %s", prefix, b.name, b.ip)
@@ -363,7 +409,7 @@ function UI.showBulbRemover(plugin)
     local panel
     local buttons = {}
 
-    for _i, bulb in ipairs(all) do
+    for _, bulb in ipairs(all) do
         local b = bulb
         table.insert(buttons, {{
             text     = string.format("%s   (%s)", b.name, b.ip),
@@ -413,11 +459,11 @@ function UI.showDiscoveryWizard(plugin)
 
     -- Filter out MACs already in the registry
     local known = {}
-    for _i, b in ipairs(Bulbs.getAll()) do
+    for _, b in ipairs(Bulbs.getAll()) do
         known[b.mac] = true
     end
     local new_bulbs = {}
-    for _i, b in ipairs(found_bulbs) do
+    for _, b in ipairs(found_bulbs) do
         if not known[b.mac] then
             table.insert(new_bulbs, b)
         end
@@ -632,7 +678,7 @@ function UI.rediscoverBulb(plugin, mac, retry_fn)
         return
     end
 
-    for _i, found in ipairs(bulbs) do
+    for _, found in ipairs(bulbs) do
         if found.mac == mac then
             Bulbs.updateIP(mac, found.ip)
             plugin:notify(
