@@ -149,7 +149,13 @@ function WizLight:toggleBulb(ip)
 end
 
 -- Warm white 3000K at 70% brightness – comfortable for extended reading.
-local READING_MODE_PARAMS = { state = true, temp = 3000, dimming = 70 }
+-- sceneId = 0 is deliberate: WiZ represents "no scene, plain white" as an
+-- explicit sceneId of 0, not the absence of the field (confirmed against
+-- real getPilot dumps for bulbs in plain CCT mode). Without it, activating
+-- Reading Mode while a scene is running can leave the bulb still rendering
+-- that scene — some scenes (Night Light among them) don't even report
+-- dimming/temp back while active, so there's nothing to visibly change.
+local READING_MODE_PARAMS = { state = true, sceneId = 0, temp = 3000, dimming = 70 }
 
 --- Toggle Reading Mode for `bulb`. Activating snapshots the bulb's current
 --- state so it can be restored; deactivating restores that snapshot.

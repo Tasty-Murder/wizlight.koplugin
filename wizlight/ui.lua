@@ -410,7 +410,10 @@ function UI.showDefaultSceneSetting(plugin)
             value_hold_step = 500,
             ok_text         = _("Save"),
             callback = function(spin)
-                local params = { state = true, dimming = dimming, temp = spin.value }
+                -- sceneId = 0: this preset is always plain white, never a
+                -- scene, so it should always explicitly exit scene mode
+                -- when applied (see READING_MODE_PARAMS in main.lua).
+                local params = { state = true, sceneId = 0, dimming = dimming, temp = spin.value }
                 Bulbs.setDefaultScene(params)
                 plugin:notify(string.format(_("Default scene set: %s"), Wiz.describeParams(params)), 4)
             end,
