@@ -61,7 +61,7 @@ end
 
 function UI.showControlPanel(plugin, bulb)
     local reading_active = Bulbs.getReadingModeState(bulb.mac).active
-    local reading_mode_text = reading_active and _("Reading Mode ✓ (tap to exit)") or _("Reading Mode")
+    local reading_mode_text = reading_active and _("Reading Mode - On") or _("Reading Mode - Off")
 
     local panel
     panel = ButtonDialog:new{

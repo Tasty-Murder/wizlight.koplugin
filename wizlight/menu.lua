@@ -40,7 +40,11 @@ end
 
 local function menuItemReadingMode(plugin)
     return {
-        text     = _("Reading Mode"),
+        text_func = function()
+            local active = Bulbs.getActive()
+            local on = active and Bulbs.getReadingModeState(active.mac).active
+            return on and _("Reading Mode - On") or _("Reading Mode - Off")
+        end,
         checked_func = function()
             local active = Bulbs.getActive()
             return active and Bulbs.getReadingModeState(active.mac).active or false
