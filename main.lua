@@ -133,22 +133,64 @@ function WizLight:send(action_fn, ip)
 end
 
 --- Fetch the current bulb state, flip it, and notify the user.
+-- Routes both calls through send() so a stale IP after a router restart
+-- still triggers the DHCP re-discovery dialog, same as every other action
+-- (Brightness, Color Temperature, Effect Speed, Scenes).
 function WizLight:toggleBulb(ip)
-    local state, err = Wiz.getPilot(ip)
-    if not state then
-        logger.warn("wizlight: getPilot failed –", err)
-        self:notify(self:errMsg(err), 4)
-        return
-    end
+    local state = self:send(Wiz.getPilot, ip)
+    if not state then return end
 
     local is_on = state.result and state.result.state
     if is_on then
-        local result, err2 = Wiz.turnOff(ip)
-        if result then self:notify(_("WiZ Light: Off")) else self:notify(self:errMsg(err2), 4) end
+        if self:send(Wiz.turnOff, ip) then self:notify(_("WiZ Light: Off")) end
     else
-        local result, err2 = Wiz.turnOn(ip)
-        if result then self:notify(_("WiZ Light: On")) else self:notify(self:errMsg(err2), 4) end
+        if self:send(Wiz.turnOn, ip) then self:notify(_("WiZ Light: On")) end
     end
+end
+
+-- Warm white 3000K at 70% brightness – comfortable for extended reading.
+local READING_MODE_PARAMS = { state = true, temp = 3000, dimming = 70 }
+
+--- Toggle Reading Mode for `bulb`. Activating snapshots the bulb's current
+--- state so it can be restored; deactivating restores that snapshot.
+function WizLight:toggleReadingMode(bulb)
+    local reading = Bulbs.getReadingModeState(bulb.mac)
+    if reading.active then
+        if self:send(function(ip) return Wiz.setPilot(ip, reading.saved) end, bulb.ip) then
+            Bulbs.setReadingModeState(bulb.mac, false, nil)
+            self:notify(_("Reading Mode deactivated"))
+        end
+    else
+        local state = self:send(Wiz.getPilot, bulb.ip)
+        if not state then return end
+        local saved = Wiz.pilotToParams(state.result or {})
+        if self:send(function(ip) return Wiz.setPilot(ip, READING_MODE_PARAMS) end, bulb.ip) then
+            Bulbs.setReadingModeState(bulb.mac, true, saved)
+            self:notify(_("Reading Mode activated"))
+        end
+    end
+end
+
+--- Activate the configured Default Scene, or point the user at how to set
+--- one if they haven't yet.
+function WizLight:activateDefaultScene(bulb)
+    local params = Bulbs.getDefaultScene()
+    if not params then
+        self:notify(_([[No default scene set yet.
+Hold "Default Scene" to save your current light settings as the default.]]), 5)
+        return
+    end
+    if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip) then
+        self:notify(_("Default scene activated"))
+    end
+end
+
+--- Snapshot the bulb's current live state and save it as the Default Scene.
+function WizLight:saveDefaultScene(bulb)
+    local state = self:send(Wiz.getPilot, bulb.ip)
+    if not state then return end
+    Bulbs.setDefaultScene(Wiz.pilotToParams(state.result or {}))
+    self:notify(_("Default scene saved"))
 end
 
 -- ── gesture actions ──────────────────────────────────────────────────────────
