@@ -21,20 +21,35 @@ local Menu  = require("wizlight.menu")
 local UI    = require("wizlight.ui")
 
 -- Curated list of WiZ scenes relevant to reading and relaxation.
--- kind = "static"  → brightness + color temperature are editable
--- kind = "dynamic" → brightness + animation speed are editable
+--
+-- Each scene declares which setPilot overrides actually do something on the
+-- bulb, per the official WiZ Pro API reference's per-scene "Adjustable
+-- speed"/"Adjustable dimming" compatibility table (docs.pro.wizconnected.com):
+--   dimming → brightness override is honoured
+--   speed   → animation speed override is honoured (true "dynamic" scenes)
+--   temp    → colour-temperature override is honoured; kept only for the
+--             plain white-tone scenes, where "pick a different colour
+--             temperature" is what the scene name literally means — there's
+--             no first-party confirmation it does anything for a
+--             mood/function scene like Relax or Bedtime, so those don't
+--             claim it.
+-- Night Light has neither adjustable dimming nor speed (a fixed low glow by
+-- design), so it gets no overrides at all. The original list's "Fireplace"
+-- is RGB-only (no TW/DW row in the compatibility table) and can't work on
+-- this plugin's dimming+colour-temp-only control surface, so it's replaced
+-- with Golden White, which is genuinely dynamic and TW/DW-compatible.
 local SCENES = {
-    { id = 11, name = _("Warm White"),  kind = "static"  },
-    { id = 12, name = _("Daylight"),    kind = "static"  },
-    { id = 13, name = _("Cool White"),  kind = "static"  },
-    { id = 14, name = _("Night Light"), kind = "static"  },
-    { id = 15, name = _("Focus"),       kind = "static"  },
-    { id =  6, name = _("Cozy"),        kind = "dynamic" },
-    { id = 16, name = _("Relax"),       kind = "dynamic" },
-    { id = 29, name = _("Candlelight"), kind = "dynamic" },
-    { id =  5, name = _("Fireplace"),   kind = "dynamic" },
-    { id =  9, name = _("Wake Up"),     kind = "dynamic" },
-    { id = 10, name = _("Bedtime"),     kind = "dynamic" },
+    { id = 11, name = _("Warm White"),   dimming = true, temp = true,  speed = false },
+    { id = 12, name = _("Daylight"),     dimming = true, temp = true,  speed = false },
+    { id = 13, name = _("Cool White"),   dimming = true, temp = true,  speed = false },
+    { id = 14, name = _("Night Light"),  dimming = false, temp = false, speed = false },
+    { id = 15, name = _("Focus"),        dimming = true, temp = true,  speed = false },
+    { id = 16, name = _("Relax"),        dimming = true, temp = false, speed = false },
+    { id =  9, name = _("Wake Up"),      dimming = true, temp = false, speed = false },
+    { id = 10, name = _("Bedtime"),      dimming = true, temp = false, speed = false },
+    { id =  6, name = _("Cozy"),         dimming = true, temp = false, speed = true  },
+    { id = 29, name = _("Candlelight"),  dimming = true, temp = false, speed = true  },
+    { id = 30, name = _("Golden White"), dimming = true, temp = false, speed = true  },
 }
 
 local WizLight = WidgetContainer:extend{
