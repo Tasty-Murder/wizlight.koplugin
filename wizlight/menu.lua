@@ -137,13 +137,7 @@ local function sceneMenuItem(plugin, scene)
     return {
         text     = scene.name,
         callback = function()
-            plugin:withBulb(function(bulb)
-                local params      = Bulbs.buildSceneParams(scene.id)
-                local result, err = Wiz.setPilot(bulb.ip, params)
-                if not result then
-                    plugin:notify(plugin:errMsg(err), 4)
-                end
-            end)
+            plugin:withBulb(function(bulb) plugin:activateScene(bulb, scene) end)
         end,
     }
 end

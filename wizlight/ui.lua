@@ -38,17 +38,6 @@ end
 
 -- ── scene activation ──────────────────────────────────────────────────────────
 
---- Activate a scene, merging any stored overrides into the setPilot params.
-local function activateScene(plugin, bulb, scene)
-    local params      = Bulbs.buildSceneParams(scene.id)
-    local result, err = Wiz.setPilot(bulb.ip, params)
-    if result then
-        plugin:notify(string.format(_("Scene: %s"), scene.name))
-    else
-        plugin:notify(plugin:errMsg(err), 4)
-    end
-end
-
 --- Return scene name with a "*" marker if it has stored overrides.
 local function sceneLabel(scene)
     if next(Bulbs.getSceneOverride(scene.id)) then
@@ -154,7 +143,7 @@ local function showSceneGroup(plugin, bulb, title, animated)
                 text     = sceneLabel(scene),
                 callback = function()
                     UIManager:close(panel)
-                    activateScene(plugin, bulb, scene)
+                    plugin:activateScene(bulb, scene)
                 end,
             }}
             if scene.dimming or scene.speed or scene.temp then

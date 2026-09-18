@@ -173,14 +173,33 @@ function WizLight:toggleReadingMode(bulb)
     end
 end
 
+--- Activate `scene` on `bulb`. Clears Reading Mode's active state first —
+--- the scene now fully replaces whatever Reading Mode had set, so leaving
+--- Reading Mode marked "on" would be stale (its checkmark/label would lie,
+--- and toggling it "off" would revert to the wrong thing).
+function WizLight:activateScene(bulb, scene)
+    if Bulbs.getReadingModeState(bulb.mac).active then
+        Bulbs.setReadingModeState(bulb.mac, false, nil)
+    end
+    local params = Bulbs.buildSceneParams(scene.id)
+    if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip) then
+        self:notify(string.format(_("Scene: %s"), scene.name))
+    end
+end
+
 --- Activate the configured Default Scene, or point the user at how to set
---- one if they haven't yet.
+--- one if they haven't yet. Clears Reading Mode's active state first, same
+--- reasoning as activateScene() — Default Scene fully replaces whatever
+--- was showing.
 function WizLight:activateDefaultScene(bulb)
     local params = Bulbs.getDefaultScene()
     if not params then
         self:notify(_([[No default scene set yet.
 Hold "Default Scene" to save your current light settings as the default.]]), 5)
         return
+    end
+    if Bulbs.getReadingModeState(bulb.mac).active then
+        Bulbs.setReadingModeState(bulb.mac, false, nil)
     end
     if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip) then
         self:notify(string.format(_("Default scene activated: %s"), Wiz.describeParams(params)), 4)
