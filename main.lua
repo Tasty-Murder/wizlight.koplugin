@@ -221,6 +221,18 @@ Hold "Default Scene" to save your current light settings as the default.]]), 5)
     end
 end
 
+--- Query the bulb's live state and return one field from it, or nil if
+--- unreachable or the field isn't present (e.g. a scene without that
+--- override, like Night Light's missing dimming/temp). Used to pre-fill
+--- the Brightness/Color Temperature dials with the bulb's true current
+--- value instead of the last value locally *requested* — those can
+--- silently diverge, since some WiZ bulbs clamp a requested color
+--- temperature to their own hardware minimum without any error.
+function WizLight:queryLiveField(bulb, field)
+    local state = self:send(Wiz.getPilot, bulb.ip)
+    return state and state.result and state.result[field]
+end
+
 --- Snapshot the bulb's current live state and save it as the Default Scene.
 function WizLight:saveDefaultScene(bulb)
     local state = self:send(Wiz.getPilot, bulb.ip)

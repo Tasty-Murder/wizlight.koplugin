@@ -60,7 +60,8 @@ local function menuItemBrightness(plugin)
         text     = _("Brightness…"),
         callback = function()
             plugin:withBulb(function(bulb)
-                local saved = G_reader_settings:readSetting("wizlight_brightness") or 70
+                local saved = plugin:queryLiveField(bulb, "dimming")
+                    or G_reader_settings:readSetting("wizlight_brightness") or 70
                 UIManager:show(SpinWidget:new{
                     title_text      = _("Brightness"),
                     value           = saved,
@@ -86,7 +87,8 @@ local function menuItemColorTemp(plugin)
         text     = _("Color Temperature…"),
         callback = function()
             plugin:withBulb(function(bulb)
-                local saved = G_reader_settings:readSetting("wizlight_colortemp") or 3000
+                local saved = plugin:queryLiveField(bulb, "temp")
+                    or G_reader_settings:readSetting("wizlight_colortemp") or 3000
                 UIManager:show(SpinWidget:new{
                     title_text      = _("Color Temperature (K)"),
                     value           = saved,

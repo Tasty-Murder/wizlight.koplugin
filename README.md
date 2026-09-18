@@ -96,8 +96,8 @@ All controls are under **Tools → More Tools → WiZ Light**:
 | Toggle On / Off | Turns the active bulb on or off |
 | Default Scene | Tap to activate your saved preset; hold to save the bulb's current settings as the new preset |
 | Reading Mode - On / Reading Mode - Off | Toggles warm white (3000 K, 70%) and back; the label reflects the current state, and turning it off restores whatever the bulb was doing before |
-| Brightness… | Opens a dial to set brightness (10–100%) |
-| Color Temperature… | Opens a dial to set colour warmth (2200–6500 K) |
+| Brightness… | Opens a dial pre-filled with the bulb's real current brightness (10–100%) |
+| Color Temperature… | Opens a dial pre-filled with the bulb's real current colour warmth (2200–6500 K) — some bulbs silently clamp a requested value below their own hardware minimum, so this always reflects what the bulb actually reports, not just the last value you asked for |
 | Effect Speed… | Opens a dial to set animation speed for dynamic scenes (10–200) |
 | Scenes | Opens the Lighting Themes / Animated Scenes chooser |
 | Settings → Manage Lights → Discover new lights… | Scan the network for WiZ bulbs |
