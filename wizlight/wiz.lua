@@ -145,6 +145,31 @@ function Wiz.pilotToParams(result)
     return params
 end
 
+--- Render a setPilot params table as a short human-readable summary, e.g.
+--- "scene 14, 70%" or "70%, 3000K". Used in notifications for Reading Mode
+--- and Default Scene so a captured/sent snapshot is visible and checkable
+--- instead of an opaque "it worked" toast — if this ever prints just "on"
+--- or "off" where you expected brightness/temp/scene to show up, that
+--- means getPilot's response didn't include the field you expected, not
+--- that setPilot silently failed.
+function Wiz.describeParams(params)
+    local parts = {}
+    if params.sceneId then table.insert(parts, "scene " .. params.sceneId) end
+    if params.dimming then table.insert(parts, params.dimming .. "%") end
+    if params.temp then table.insert(parts, params.temp .. "K") end
+    if params.speed then table.insert(parts, "speed " .. params.speed) end
+    if params.r or params.g or params.b then
+        table.insert(parts, string.format("rgb(%s,%s,%s)", params.r or 0, params.g or 0, params.b or 0))
+    end
+    if params.c then table.insert(parts, "cold " .. params.c) end
+    if params.w then table.insert(parts, "warm " .. params.w) end
+    if #parts == 0 then
+        if params.state == false then return "off" end
+        return "on"
+    end
+    return table.concat(parts, ", ")
+end
+
 --- Broadcast a registration message and collect all responding WiZ bulbs.
 -- Runs for `timeout` seconds (default 10) and returns an array of
 -- `{ ip = "...", mac = "..." }` tables.  The caller is responsible for

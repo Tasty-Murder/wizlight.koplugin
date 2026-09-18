@@ -158,7 +158,8 @@ function WizLight:toggleReadingMode(bulb)
     if reading.active then
         if self:send(function(ip) return Wiz.setPilot(ip, reading.saved) end, bulb.ip) then
             Bulbs.setReadingModeState(bulb.mac, false, nil)
-            self:notify(_("Reading Mode deactivated"))
+            self:notify(string.format(_("Reading Mode deactivated (restored: %s)"),
+                Wiz.describeParams(reading.saved)), 4)
         end
     else
         local state = self:send(Wiz.getPilot, bulb.ip)
@@ -166,7 +167,8 @@ function WizLight:toggleReadingMode(bulb)
         local saved = Wiz.pilotToParams(state.result or {})
         if self:send(function(ip) return Wiz.setPilot(ip, READING_MODE_PARAMS) end, bulb.ip) then
             Bulbs.setReadingModeState(bulb.mac, true, saved)
-            self:notify(_("Reading Mode activated"))
+            self:notify(string.format(_("Reading Mode activated (was: %s)"),
+                Wiz.describeParams(saved)), 4)
         end
     end
 end
@@ -181,7 +183,7 @@ Hold "Default Scene" to save your current light settings as the default.]]), 5)
         return
     end
     if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip) then
-        self:notify(_("Default scene activated"))
+        self:notify(string.format(_("Default scene activated: %s"), Wiz.describeParams(params)), 4)
     end
 end
 
@@ -189,8 +191,9 @@ end
 function WizLight:saveDefaultScene(bulb)
     local state = self:send(Wiz.getPilot, bulb.ip)
     if not state then return end
-    Bulbs.setDefaultScene(Wiz.pilotToParams(state.result or {}))
-    self:notify(_("Default scene saved"))
+    local params = Wiz.pilotToParams(state.result or {})
+    Bulbs.setDefaultScene(params)
+    self:notify(string.format(_("Default scene saved: %s"), Wiz.describeParams(params)), 4)
 end
 
 -- ── gesture actions ──────────────────────────────────────────────────────────
