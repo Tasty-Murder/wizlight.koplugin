@@ -149,7 +149,7 @@ end
 -- anything on the bulb (see the SCENES table comment in main.lua).
 local function buildScenesMenu(plugin)
     local lighting_themes, animated = {}, {}
-    for _, scene in ipairs(plugin.SCENES) do
+    for _i, scene in ipairs(plugin.SCENES) do
         table.insert(scene.speed and animated or lighting_themes, sceneMenuItem(plugin, scene))
     end
     return {

@@ -146,7 +146,7 @@ local function showSceneGroup(plugin, bulb, title, animated)
     local panel
     local buttons = {}
 
-    for _, scene in ipairs(plugin.SCENES) do
+    for _i, scene in ipairs(plugin.SCENES) do
         if scene.speed == animated then
             -- One button to activate; a second "Edit…" only if the scene
             -- actually has an overridable parameter (Night Light has none).
@@ -314,7 +314,7 @@ function UI.showBulbSwitcher(plugin, current_mac)
     local panel
     local buttons = {}
 
-    for _, bulb in ipairs(all) do
+    for _i, bulb in ipairs(all) do
         local b = bulb
         local label = b.mac == current_mac
             and string.format("[✓] %s", b.name)
@@ -349,7 +349,7 @@ function UI.showBulbManager(plugin)
     local panel
     local buttons = {}
 
-    for _, bulb in ipairs(all) do
+    for _i, bulb in ipairs(all) do
         local b       = bulb
         local prefix  = (active and active.mac == b.mac) and "[✓] " or "[ ] "
         local label   = string.format("%s%s   %s", prefix, b.name, b.ip)
@@ -409,7 +409,7 @@ function UI.showBulbRemover(plugin)
     local panel
     local buttons = {}
 
-    for _, bulb in ipairs(all) do
+    for _i, bulb in ipairs(all) do
         local b = bulb
         table.insert(buttons, {{
             text     = string.format("%s   (%s)", b.name, b.ip),
@@ -459,11 +459,11 @@ function UI.showDiscoveryWizard(plugin)
 
     -- Filter out MACs already in the registry
     local known = {}
-    for _, b in ipairs(Bulbs.getAll()) do
+    for _i, b in ipairs(Bulbs.getAll()) do
         known[b.mac] = true
     end
     local new_bulbs = {}
-    for _, b in ipairs(found_bulbs) do
+    for _i, b in ipairs(found_bulbs) do
         if not known[b.mac] then
             table.insert(new_bulbs, b)
         end
@@ -678,7 +678,7 @@ function UI.rediscoverBulb(plugin, mac, retry_fn)
         return
     end
 
-    for _, found in ipairs(bulbs) do
+    for _i, found in ipairs(bulbs) do
         if found.mac == mac then
             Bulbs.updateIP(mac, found.ip)
             plugin:notify(
