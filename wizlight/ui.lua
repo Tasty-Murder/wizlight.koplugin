@@ -401,6 +401,48 @@ function UI.showBulbManager(plugin)
     UIManager:show(panel)
 end
 
+-- ── default scene setting ────────────────────────────────────────────────────
+
+--- Configure the Default Scene as a two-step wizard: brightness, then
+--- colour temperature. Complements the "hold Default Scene to save current"
+--- shortcut with an explicit way to dial in a preset without needing the
+--- bulb to already be showing it.
+function UI.showDefaultSceneSetting(plugin)
+    local current = Bulbs.getDefaultScene() or {}
+
+    local function showTempStep(dimming)
+        UIManager:show(SpinWidget:new{
+            title_text      = _("Default Scene — Color Temperature (K)"),
+            info_text       = _("Step 2 of 2"),
+            value           = current.temp or 3000,
+            value_min       = 2200,
+            value_max       = 6500,
+            value_step      = 100,
+            value_hold_step = 500,
+            ok_text         = _("Save"),
+            callback = function(spin)
+                local params = { state = true, dimming = dimming, temp = spin.value }
+                Bulbs.setDefaultScene(params)
+                plugin:notify(string.format(_("Default scene set: %s"), Wiz.describeParams(params)), 4)
+            end,
+        })
+    end
+
+    UIManager:show(SpinWidget:new{
+        title_text      = _("Default Scene — Brightness"),
+        info_text       = _("Step 1 of 2"),
+        value           = current.dimming or 70,
+        value_min       = 10,
+        value_max       = 100,
+        value_step      = 5,
+        value_hold_step = 20,
+        ok_text         = _("Next"),
+        callback = function(spin)
+            showTempStep(spin.value)
+        end,
+    })
+end
+
 --- Show a list of bulbs for the user to choose one to remove.
 -- Note: this function is not listed in the spec's API table (an omission in the spec),
 -- but it is required for the "Remove a light…" button in showBulbManager.

@@ -183,6 +183,19 @@ local function menuItemDiscoveryTimeout()
     }
 end
 
+local function menuItemDefaultSceneSetting(plugin)
+    return {
+        text_func = function()
+            local current = Bulbs.getDefaultScene()
+            if current then
+                return string.format(_("Default Scene… (%s)"), Wiz.describeParams(current))
+            end
+            return _("Default Scene… (not set)")
+        end,
+        callback = function() UI.showDefaultSceneSetting(plugin) end,
+    }
+end
+
 local function buildSettingsMenu(plugin)
     return {
         {
@@ -190,6 +203,7 @@ local function buildSettingsMenu(plugin)
             callback = function() UI.showBulbManager(plugin) end,
         },
         menuItemDiscoveryTimeout(),
+        menuItemDefaultSceneSetting(plugin),
     }
 end
 
