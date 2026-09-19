@@ -71,6 +71,9 @@ local function sendUDP(ip, message, expect_method)
 
         -- Retransmit periodically rather than trusting one datagram to
         -- survive the trip. The total wait stays bounded by TIMEOUT.
+        -- Safe to repeat: every command this module sends states absolute
+        -- values (state/temp/dimming/sceneId), never a delta, so a
+        -- duplicate that does arrive re-applies the same result.
         local now = socket.gettime()
         if now >= next_send then
             udp:sendto(message, ip, WIZ_PORT)
