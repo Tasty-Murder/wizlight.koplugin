@@ -226,7 +226,12 @@ end
 --- that setPilot silently failed.
 function Wiz.describeParams(params)
     local parts = {}
-    if params.sceneId then table.insert(parts, "scene " .. params.sceneId) end
+    -- sceneId 0 is WiZ's way of saying "no scene, plain white", and this
+    -- plugin now sends it deliberately — rendering it as "scene 0" would
+    -- describe the exact opposite of what it means.
+    if params.sceneId and params.sceneId ~= 0 then
+        table.insert(parts, "scene " .. params.sceneId)
+    end
     if params.dimming then table.insert(parts, params.dimming .. "%") end
     if params.temp then table.insert(parts, params.temp .. "K") end
     if params.speed then table.insert(parts, "speed " .. params.speed) end
