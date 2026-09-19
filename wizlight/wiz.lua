@@ -325,7 +325,9 @@ function Wiz.discover(timeout)
             local decoded, dec_err = rapidjson.decode(data)
             if decoded then
                 local result = decoded.result or decoded.r
-                local mac = result and result.mac
+                -- Type-check before indexing: anything can arrive on a
+                -- bound broadcast port, and indexing a non-table raises.
+                local mac = type(result) == "table" and result.mac
                 if mac and not seen[mac] then
                     seen[mac] = true
                     logger.info("wizlight discover: found bulb mac=" .. mac .. " ip=" .. src_ip)
@@ -375,22 +377,36 @@ function Wiz.probe(ip, timeout)
     end
     logger.info("wizlight probe: sent registration to", ip)
 
-    local deadline = socket.gettime() + timeout
+    local deadline  = socket.gettime() + timeout
+    -- Same packet-loss reasoning as discover(): resend while waiting rather
+    -- than betting the whole probe on one datagram.
+    local next_send = socket.gettime() + 1
+
     while socket.gettime() < deadline do
         local data, src_ip = udp:receivefrom()
-        if data then
+        -- This socket is bound to the WiZ port, so any bulb on the network
+        -- can land here. Only the one whose address was actually asked for
+        -- counts — otherwise "Add light by IP" could quietly add a
+        -- different bulb that happened to answer first.
+        if data and src_ip == ip then
             logger.info("wizlight probe: received", #data, "bytes from", src_ip)
             local decoded, dec_err = rapidjson.decode(data)
             if decoded then
                 local result = decoded.result or decoded.r
-                local mac = result and result.mac
+                local mac = type(result) == "table" and result.mac
                 if mac then
                     udp:close()
-                    return { ip = src_ip, mac = mac }
+                    return { ip = ip, mac = mac }
                 end
             else
                 logger.warn("wizlight probe: JSON decode failed:", dec_err)
             end
+        end
+
+        local now = socket.gettime()
+        if now >= next_send then
+            udp:sendto(msg, ip, WIZ_PORT)
+            next_send = now + 1
         end
     end
 
