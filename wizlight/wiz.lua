@@ -134,17 +134,27 @@ end
 function Wiz.setPilot(ip, params)
     local msg = rapidjson.encode({ method = "setPilot", params = params })
     local decoded, err, code = sendUDP(ip, msg, "setPilot")
-    if decoded then return decoded end
 
-    if code == ERR_INVALID_PARAMS and params.sceneId == 0 then
+    if not decoded and code == ERR_INVALID_PARAMS and params.sceneId == 0 then
         local retry = {}
         for key, value in pairs(params) do retry[key] = value end
         retry.sceneId = nil
         logger.info("wizlight: bulb rejected sceneId=0, retrying without it")
-        return sendUDP(ip, rapidjson.encode({ method = "setPilot", params = retry }), "setPilot")
+        decoded, err = sendUDP(ip, rapidjson.encode({ method = "setPilot", params = retry }),
+            "setPilot")
     end
 
-    return nil, err
+    if not decoded then return nil, err end
+
+    -- A successful setPilot answers {"result":{"success":true}}. Only treat
+    -- an explicit false as failure: firmware that omits the field entirely
+    -- shouldn't be reported as broken.
+    if decoded.result and decoded.result.success == false then
+        logger.warn("wizlight: bulb reported setPilot success=false")
+        return nil, "bulb did not apply the command"
+    end
+
+    return decoded
 end
 
 --- Turn the bulb on (preserving its last colour/scene).
