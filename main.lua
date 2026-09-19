@@ -15,26 +15,42 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger          = require("logger")
 local _               = require("gettext")
 
-local Wiz   = require("wizlight.wiz")
-local Bulbs = require("wizlight.bulbs")
-local Menu  = require("wizlight.menu")
-local UI    = require("wizlight.ui")
+local Wiz      = require("wizlight.wiz")
+local Bulbs    = require("wizlight.bulbs")
+local Menu     = require("wizlight.menu")
+local UI       = require("wizlight.ui")
+local Firewall = require("wizlight.firewall")
 
 -- Curated list of WiZ scenes relevant to reading and relaxation.
--- kind = "static"  → brightness + color temperature are editable
--- kind = "dynamic" → brightness + animation speed are editable
+--
+-- Each scene declares which setPilot overrides actually do something on the
+-- bulb, per the official WiZ Pro API reference's per-scene "Adjustable
+-- speed"/"Adjustable dimming" compatibility table (docs.pro.wizconnected.com):
+--   dimming → brightness override is honoured
+--   speed   → animation speed override is honoured (true "dynamic" scenes)
+--   temp    → colour-temperature override is honoured; kept only for the
+--             plain white-tone scenes, where "pick a different colour
+--             temperature" is what the scene name literally means — there's
+--             no first-party confirmation it does anything for a
+--             mood/function scene like Relax or Bedtime, so those don't
+--             claim it.
+-- Night Light has neither adjustable dimming nor speed (a fixed low glow by
+-- design), so it gets no overrides at all. The original list's "Fireplace"
+-- is RGB-only (no TW/DW row in the compatibility table) and can't work on
+-- this plugin's dimming+colour-temp-only control surface, so it's replaced
+-- with Golden White, which is genuinely dynamic and TW/DW-compatible.
 local SCENES = {
-    { id = 11, name = _("Warm White"),  kind = "static"  },
-    { id = 12, name = _("Daylight"),    kind = "static"  },
-    { id = 13, name = _("Cool White"),  kind = "static"  },
-    { id = 14, name = _("Night Light"), kind = "static"  },
-    { id = 15, name = _("Focus"),       kind = "static"  },
-    { id =  6, name = _("Cozy"),        kind = "dynamic" },
-    { id = 16, name = _("Relax"),       kind = "dynamic" },
-    { id = 29, name = _("Candlelight"), kind = "dynamic" },
-    { id =  5, name = _("Fireplace"),   kind = "dynamic" },
-    { id =  9, name = _("Wake Up"),     kind = "dynamic" },
-    { id = 10, name = _("Bedtime"),     kind = "dynamic" },
+    { id = 11, name = _("Warm White"),   dimming = true, temp = true,  speed = false },
+    { id = 12, name = _("Daylight"),     dimming = true, temp = true,  speed = false },
+    { id = 13, name = _("Cool White"),   dimming = true, temp = true,  speed = false },
+    { id = 14, name = _("Night Light"),  dimming = false, temp = false, speed = false },
+    { id = 15, name = _("Focus"),        dimming = true, temp = true,  speed = false },
+    { id = 16, name = _("Relax"),        dimming = true, temp = false, speed = false },
+    { id =  9, name = _("Wake Up"),      dimming = true, temp = false, speed = false },
+    { id = 10, name = _("Bedtime"),      dimming = true, temp = false, speed = false },
+    { id =  6, name = _("Cozy"),         dimming = true, temp = false, speed = true  },
+    { id = 29, name = _("Candlelight"),  dimming = true, temp = false, speed = true  },
+    { id = 30, name = _("Golden White"), dimming = true, temp = false, speed = true  },
 }
 
 local WizLight = WidgetContainer:extend{
@@ -66,6 +82,21 @@ function WizLight:init()
     self.ui.menu:registerToMainMenu(self)
 end
 
+--- Take the firewall rules back down on the way out. The rules are opened
+--- lazily on first contact with a bulb rather than here, so a KOReader
+--- session that never touches the plugin never touches iptables either.
+--- Both hooks are wired because whichever fires first wins and the second
+--- is a no-op; if neither does (a crash), the rules don't survive a reboot.
+function WizLight:onCloseWidget()
+    Firewall.close()
+    Bulbs.close()
+end
+
+function WizLight:onExit()
+    Firewall.close()
+    Bulbs.close()
+end
+
 -- ── helpers ──────────────────────────────────────────────────────────────────
 
 --- Show a short informational toast.
@@ -91,19 +122,26 @@ end
 --- Call action_fn(ip). On failure, show DHCP dialog if a registry bulb is active,
 --- or a plain toast for non-registry errors.
 ---
---- Design note: any failure for the active registry bulb triggers the DHCP dialog,
---- including transient errors (timeouts, packet loss). This is intentional: in practice
---- the overwhelming majority of "bulb unreachable" events on a home LAN are DHCP changes
---- after a router restart, not transient packet loss. The user can always tap "Dismiss"
---- for a transient failure. Distinguishing DHCP-change from transient error at the
---- protocol level would require retry logic that adds complexity without much benefit
+--- Design note: a *silent* failure for the active registry bulb triggers the DHCP
+--- dialog, including transient errors (timeouts, packet loss). This is intentional: in
+--- practice the overwhelming majority of "bulb unreachable" events on a home LAN are DHCP
+--- changes after a router restart, not transient packet loss. The user can always tap
+--- "Dismiss" for a transient failure. Distinguishing DHCP-change from transient error at
+--- the protocol level would require retry logic that adds complexity without much benefit
 --- for a single-user home-network plugin.
+---
+--- A bulb that *answered* and refused the command is a different story: it's plainly
+--- reachable, so offering to hunt for a new IP would be nonsense. Those get the error
+--- text instead, which is also what makes a refusal legible while debugging.
 function WizLight:send(action_fn, ip)
-    local result, err = action_fn(ip)
+    local result, err, code = action_fn(ip)
     if not result then
         logger.warn("wizlight: command failed –", err)
         local active = Bulbs.getActive()
-        if active and active.ip == ip then
+        if Wiz.isRefusal(code) then
+            -- Not "unreachable": it answered. Show what it actually said.
+            self:notify(string.format(_("WiZ light: %s"), err or "unknown error"), 5)
+        elseif active and active.ip == ip then
             -- Offer re-discovery in case IP changed via DHCP
             UI.showDHCPDialog(self, active.name, active.mac, function()
                 -- Retry with fresh IP after re-discovery
@@ -118,22 +156,122 @@ function WizLight:send(action_fn, ip)
 end
 
 --- Fetch the current bulb state, flip it, and notify the user.
+-- Routes both calls through send() so a stale IP after a router restart
+-- still triggers the DHCP re-discovery dialog, same as every other action
+-- (Brightness, Color Temperature, Effect Speed, Scenes).
 function WizLight:toggleBulb(ip)
-    local state, err = Wiz.getPilot(ip)
-    if not state then
-        logger.warn("wizlight: getPilot failed –", err)
-        self:notify(self:errMsg(err), 4)
-        return
-    end
+    local state = self:send(Wiz.getPilot, ip)
+    if not state then return end
 
     local is_on = state.result and state.result.state
     if is_on then
-        local result, err2 = Wiz.turnOff(ip)
-        if result then self:notify(_("WiZ Light: Off")) else self:notify(self:errMsg(err2), 4) end
+        if self:send(Wiz.turnOff, ip) then self:notify(_("WiZ Light: Off")) end
     else
-        local result, err2 = Wiz.turnOn(ip)
-        if result then self:notify(_("WiZ Light: On")) else self:notify(self:errMsg(err2), 4) end
+        if self:send(Wiz.turnOn, ip) then self:notify(_("WiZ Light: On")) end
     end
+end
+
+-- Warm white 3000K at 70% brightness – comfortable for extended reading.
+-- sceneId = 0 is deliberate: WiZ represents "no scene, plain white" as an
+-- explicit sceneId of 0, not the absence of the field (confirmed against
+-- real getPilot dumps for bulbs in plain CCT mode). Without it, activating
+-- Reading Mode while a scene is running can leave the bulb still rendering
+-- that scene — some scenes (Night Light among them) don't even report
+-- dimming/temp back while active, so there's nothing to visibly change.
+local READING_MODE_PARAMS = { state = true, sceneId = 0, temp = 3000, dimming = 70 }
+
+--- Toggle Reading Mode for `bulb`. Activating snapshots the bulb's current
+--- state so it can be restored; deactivating restores that snapshot.
+function WizLight:toggleReadingMode(bulb)
+    local reading = Bulbs.getReadingModeState(bulb.mac)
+    if reading.active then
+        -- An empty snapshot means the capture never got a usable answer
+        -- from the bulb. setPilot({}) would be accepted and change
+        -- nothing, so say so rather than reporting a restore that didn't
+        -- happen; clear the flag either way so it can't get stuck on.
+        if not next(reading.saved or {}) then
+            Bulbs.setReadingModeState(bulb.mac, false, nil)
+            self:notify(_("Reading Mode off (no previous state to restore)"), 4)
+            return
+        end
+        if self:send(function(ip) return Wiz.setPilot(ip, reading.saved) end, bulb.ip) then
+            Bulbs.setReadingModeState(bulb.mac, false, nil)
+            self:notify(string.format(_("Reading Mode deactivated (restored: %s)"),
+                Wiz.describeParams(reading.saved)), 4)
+        end
+    else
+        local state = self:send(Wiz.getPilot, bulb.ip)
+        if not state then return end
+        local saved = Wiz.pilotToParams(state.result or {})
+        if self:send(function(ip) return Wiz.setPilot(ip, READING_MODE_PARAMS) end, bulb.ip) then
+            Bulbs.setReadingModeState(bulb.mac, true, saved)
+            self:notify(string.format(_("Reading Mode activated (was: %s)"),
+                Wiz.describeParams(saved)), 4)
+        end
+    end
+end
+
+--- Activate `scene` on `bulb`. Clears Reading Mode's active state first —
+--- the scene now fully replaces whatever Reading Mode had set, so leaving
+--- Reading Mode marked "on" would be stale (its checkmark/label would lie,
+--- and toggling it "off" would revert to the wrong thing).
+function WizLight:activateScene(bulb, scene)
+    if Bulbs.getReadingModeState(bulb.mac).active then
+        Bulbs.setReadingModeState(bulb.mac, false, nil)
+    end
+    local params = Bulbs.buildSceneParams(scene.id)
+    if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip) then
+        self:notify(string.format(_("Scene: %s"), scene.name))
+    end
+end
+
+--- Activate the configured Default Scene, or point the user at how to set
+--- one if they haven't yet. Clears Reading Mode's active state first, same
+--- reasoning as activateScene() — Default Scene fully replaces whatever
+--- was showing.
+function WizLight:activateDefaultScene(bulb)
+    local saved = Bulbs.getDefaultScene()
+    if not saved then
+        self:notify(_([[No default scene set yet.
+Hold "Default Scene" to save your current light settings as the default.]]), 5)
+        return
+    end
+    if Bulbs.getReadingModeState(bulb.mac).active then
+        Bulbs.setReadingModeState(bulb.mac, false, nil)
+    end
+    -- Self-healing: a default saved before the sceneId=0 fix (or one
+    -- captured while getPilot happened not to report sceneId at all) may
+    -- have no sceneId of its own. Default Scene means "plain white, no
+    -- scene" unless it was explicitly captured while a scene was showing
+    -- (in which case saved.sceneId is already that scene's real id), so
+    -- default the outgoing copy to 0 without touching the stored value.
+    local params = {}
+    for k, v in pairs(saved) do params[k] = v end
+    if params.sceneId == nil then params.sceneId = 0 end
+    if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip) then
+        self:notify(string.format(_("Default scene activated: %s"), Wiz.describeParams(params)), 4)
+    end
+end
+
+--- Query the bulb's live state and return one field from it, or nil if
+--- unreachable or the field isn't present (e.g. a scene without that
+--- override, like Night Light's missing dimming/temp). Used to pre-fill
+--- the Brightness/Color Temperature dials with the bulb's true current
+--- value instead of the last value locally *requested* — those can
+--- silently diverge, since some WiZ bulbs clamp a requested color
+--- temperature to their own hardware minimum without any error.
+function WizLight:queryLiveField(bulb, field)
+    local state = self:send(Wiz.getPilot, bulb.ip)
+    return state and state.result and state.result[field]
+end
+
+--- Snapshot the bulb's current live state and save it as the Default Scene.
+function WizLight:saveDefaultScene(bulb)
+    local state = self:send(Wiz.getPilot, bulb.ip)
+    if not state then return end
+    local params = Wiz.pilotToParams(state.result or {})
+    Bulbs.setDefaultScene(params)
+    self:notify(string.format(_("Default scene saved: %s"), Wiz.describeParams(params)), 4)
 end
 
 -- ── gesture actions ──────────────────────────────────────────────────────────

@@ -8,28 +8,18 @@ the plugin's notify(), send(), and errMsg() helpers.
 --]]--
 
 local ButtonDialog = require("ui/widget/buttondialog")
+local InfoMessage  = require("ui/widget/infomessage")
 local InputDialog  = require("ui/widget/inputdialog")
 local SpinWidget   = require("ui/widget/spinwidget")
 local Trapper      = require("ui/trapper")
 local UIManager    = require("ui/uimanager")
 local _            = require("gettext")
 
-local Wiz   = require("wizlight.wiz")
-local Bulbs = require("wizlight.bulbs")
+local Wiz      = require("wizlight.wiz")
+local Bulbs    = require("wizlight.bulbs")
+local Firewall = require("wizlight.firewall")
 
 local UI = {}
-
--- ── iptables helpers (local to ui.lua; main.lua no longer contains these) ──────
-
-local IPT_RULE = "INPUT -p udp --dport 38899 -j ACCEPT"
-
-local function iptablesOpen()
-    os.execute("iptables -I " .. IPT_RULE .. " 2>/dev/null")
-end
-
-local function iptablesClose()
-    os.execute("iptables -D " .. IPT_RULE .. " 2>/dev/null")
-end
 
 --- Format a raw WiZ MAC string (e.g. "a8bb50a4f94d") as "a8:bb:50:a4:f9:4d".
 local function formatMAC(mac)
@@ -37,17 +27,6 @@ local function formatMAC(mac)
 end
 
 -- ── scene activation ──────────────────────────────────────────────────────────
-
---- Activate a scene, merging any stored overrides into the setPilot params.
-local function activateScene(plugin, bulb, scene)
-    local params      = Bulbs.buildSceneParams(scene.id)
-    local result, err = Wiz.setPilot(bulb.ip, params)
-    if result then
-        plugin:notify(string.format(_("Scene: %s"), scene.name))
-    else
-        plugin:notify(plugin:errMsg(err), 4)
-    end
-end
 
 --- Return scene name with a "*" marker if it has stored overrides.
 local function sceneLabel(scene)
@@ -60,6 +39,9 @@ end
 -- ── control panel ─────────────────────────────────────────────────────────────
 
 function UI.showControlPanel(plugin, bulb)
+    local reading_active = Bulbs.getReadingModeState(bulb.mac).active
+    local reading_mode_text = reading_active and _("Reading Mode - On") or _("Reading Mode - Off")
+
     local panel
     panel = ButtonDialog:new{
         title = string.format(_("WiZ Light Controls — %s"), bulb.name),
@@ -68,18 +50,25 @@ function UI.showControlPanel(plugin, bulb)
                callback = function()
                    plugin:toggleBulb(bulb.ip)
                end }},
-            {{ text = _("Reading Mode"),
+            {{ text = _("Default Scene"),
                callback = function()
-                   local result, err = Wiz.setPilot(bulb.ip, { state = true, temp = 3000, dimming = 70 })
-                   if result then
-                       plugin:notify(_("Reading Mode activated"))
-                   else
-                       plugin:notify(plugin:errMsg(err), 4)
-                   end
+                   UIManager:close(panel)
+                   plugin:activateDefaultScene(bulb)
+               end },
+             { text = _("Set Current…"),
+               callback = function()
+                   UIManager:close(panel)
+                   plugin:saveDefaultScene(bulb)
+               end }},
+            {{ text = reading_mode_text,
+               callback = function()
+                   UIManager:close(panel)
+                   plugin:toggleReadingMode(bulb)
                end }},
             {{ text = _("Brightness…"),
                callback = function()
-                   local saved = G_reader_settings:readSetting("wizlight_brightness") or 70
+                   local saved = plugin:queryLiveField(bulb, "dimming")
+                       or G_reader_settings:readSetting("wizlight_brightness") or 70
                    UIManager:show(SpinWidget:new{
                        title_text      = _("Brightness"),
                        value           = saved,
@@ -96,7 +85,8 @@ function UI.showControlPanel(plugin, bulb)
                end }},
             {{ text = _("Color Temperature…"),
                callback = function()
-                   local saved = G_reader_settings:readSetting("wizlight_colortemp") or 3000
+                   local saved = plugin:queryLiveField(bulb, "temp")
+                       or G_reader_settings:readSetting("wizlight_colortemp") or 3000
                    UIManager:show(SpinWidget:new{
                        title_text      = _("Color Temperature (K)"),
                        value           = saved,
@@ -130,29 +120,35 @@ end
 
 -- ── scenes panel ─────────────────────────────────────────────────────────────
 
-function UI.showScenesPanel(plugin, bulb)
+--- Show the filtered scene list for one group. `animated` selects scenes
+-- whose animation-speed override actually does anything on the bulb (see
+-- the SCENES table comment in main.lua) vs. the plain lighting themes.
+local function showSceneGroup(plugin, bulb, title, animated)
     local panel
     local buttons = {}
 
     for _i, scene in ipairs(plugin.SCENES) do
-        local s = scene
-        -- Two buttons per row: scene name (activate) | Edit…
-        table.insert(buttons, {
-            {
-                text     = sceneLabel(s),
+        if scene.speed == animated then
+            -- One button to activate; a second "Edit…" only if the scene
+            -- actually has an overridable parameter (Night Light has none).
+            local row = {{
+                text     = sceneLabel(scene),
                 callback = function()
                     UIManager:close(panel)
-                    activateScene(plugin, bulb, s)
+                    plugin:activateScene(bulb, scene)
                 end,
-            },
-            {
-                text     = _("Edit…"),
-                callback = function()
-                    UIManager:close(panel)
-                    UI.showSceneEditor(plugin, s)
-                end,
-            },
-        })
+            }}
+            if scene.dimming or scene.speed or scene.temp then
+                table.insert(row, {
+                    text     = _("Edit…"),
+                    callback = function()
+                        UIManager:close(panel)
+                        UI.showSceneEditor(plugin, scene)
+                    end,
+                })
+            end
+            table.insert(buttons, row)
+        end
     end
 
     table.insert(buttons, {{
@@ -161,11 +157,36 @@ function UI.showScenesPanel(plugin, bulb)
     }})
 
     panel = ButtonDialog:new{
-        title   = _("Scenes"),
+        title   = title,
         buttons = buttons,
     }
     UIManager:show(panel)
     plugin._scenes_panel = panel
+end
+
+--- Top-level Scenes chooser: pick a group before showing scenes, so
+-- lighting themes and animated scenes are never mixed in one list.
+function UI.showScenesPanel(plugin, bulb)
+    local chooser
+    chooser = ButtonDialog:new{
+        title   = _("Scenes"),
+        buttons = {
+            {{ text = _("Lighting Themes…"),
+               callback = function()
+                   UIManager:close(chooser)
+                   showSceneGroup(plugin, bulb, _("Lighting Themes"), false)
+               end }},
+            {{ text = _("Animated Scenes…"),
+               callback = function()
+                   UIManager:close(chooser)
+                   showSceneGroup(plugin, bulb, _("Animated Scenes"), true)
+               end }},
+            {{ text = _("Close"),
+               callback = function() UIManager:close(chooser) end }},
+        },
+    }
+    UIManager:show(chooser)
+    plugin._scenes_panel = chooser
 end
 
 -- ── scene editor ─────────────────────────────────────────────────────────────
@@ -176,8 +197,8 @@ end
 -- spec's single-Save model.
 
 function UI.showSceneEditor(plugin, scene)
-    local override   = Bulbs.getSceneOverride(scene.id)
-    local is_static  = scene.kind == "static"
+    local override = Bulbs.getSceneOverride(scene.id)
+    local editor
 
     local function openBrightnessEditor()
         UIManager:show(SpinWidget:new{
@@ -233,25 +254,31 @@ function UI.showSceneEditor(plugin, scene)
         })
     end
 
-    local type_specific_button = is_static
-        and { text = _("Color Temperature…"), callback = function() openColorTempEditor() end }
-        or  { text = _("Animation Speed…"),   callback = function() openSpeedEditor()     end }
+    -- Only offer overrides the scene actually honours (see the SCENES table
+    -- comment in main.lua). Night Light has none, so it gets no knobs at all.
+    local buttons = {}
+    if scene.dimming then
+        table.insert(buttons, {{ text = _("Brightness…"), callback = openBrightnessEditor }})
+    end
+    if scene.temp then
+        table.insert(buttons, {{ text = _("Color Temperature…"), callback = openColorTempEditor }})
+    end
+    if scene.speed then
+        table.insert(buttons, {{ text = _("Animation Speed…"), callback = openSpeedEditor }})
+    end
+    table.insert(buttons, {{
+        text     = _("Reset to defaults"),
+        callback = function()
+            UIManager:close(editor)
+            Bulbs.clearSceneOverride(scene.id)
+            plugin:notify(string.format(_("Reset %s to defaults"), scene.name))
+        end,
+    }})
+    table.insert(buttons, {{ text = _("Cancel"), callback = function() UIManager:close(editor) end }})
 
-    local editor
     editor = ButtonDialog:new{
         title   = string.format(_("Edit Scene: %s"), scene.name),
-        buttons = {
-            {{ text = _("Brightness…"),        callback = openBrightnessEditor }},
-            { type_specific_button },
-            {{ text = _("Reset to defaults"),
-               callback = function()
-                   UIManager:close(editor)
-                   Bulbs.clearSceneOverride(scene.id)
-                   plugin:notify(string.format(_("Reset %s to defaults"), scene.name))
-               end }},
-            {{ text = _("Cancel"),
-               callback = function() UIManager:close(editor) end }},
-        },
+        buttons = buttons,
     }
     UIManager:show(editor)
 end
@@ -355,6 +382,79 @@ function UI.showBulbManager(plugin)
     UIManager:show(panel)
 end
 
+-- ── default scene setting ────────────────────────────────────────────────────
+
+--- Configure the Default Scene as a two-step wizard: brightness, then
+--- colour temperature. Complements the "hold Default Scene to save current"
+--- shortcut with an explicit way to dial in a preset without needing the
+--- bulb to already be showing it.
+function UI.showDefaultSceneSetting(plugin)
+    local current = Bulbs.getDefaultScene() or {}
+
+    local function showTempStep(dimming)
+        UIManager:show(SpinWidget:new{
+            title_text      = _("Default Scene — Color Temperature (K)"),
+            info_text       = _("Step 2 of 2"),
+            value           = current.temp or 3000,
+            value_min       = 2200,
+            value_max       = 6500,
+            value_step      = 100,
+            value_hold_step = 500,
+            ok_text         = _("Save"),
+            callback = function(spin)
+                -- sceneId = 0: this preset is always plain white, never a
+                -- scene, so it should always explicitly exit scene mode
+                -- when applied (see READING_MODE_PARAMS in main.lua).
+                local params = { state = true, sceneId = 0, dimming = dimming, temp = spin.value }
+                Bulbs.setDefaultScene(params)
+                plugin:notify(string.format(_("Default scene set: %s"), Wiz.describeParams(params)), 4)
+            end,
+        })
+    end
+
+    UIManager:show(SpinWidget:new{
+        title_text      = _("Default Scene — Brightness"),
+        info_text       = _("Step 1 of 2"),
+        value           = current.dimming or 70,
+        value_min       = 10,
+        value_max       = 100,
+        value_step      = 5,
+        value_hold_step = 20,
+        ok_text         = _("Next"),
+        callback = function(spin)
+            showTempStep(spin.value)
+        end,
+    })
+end
+
+-- ── bulb state diagnostic ────────────────────────────────────────────────────
+
+--- Show the bulb's raw getPilot response, verbatim. This is the ground
+--- truth for "did my change actually reach the bulb?" — if the values here
+--- don't move after adjusting brightness/temperature, the bulb rejected or
+--- ignored the command, which is a very different problem from the plugin
+--- capturing or displaying the wrong thing.
+function UI.showBulbState(plugin)
+    plugin:withBulb(function(bulb)
+        local state = plugin:send(Wiz.getPilot, bulb.ip)
+        if not state then
+            -- Getting here at all means no reply arrived, which is the
+            -- symptom a dropped inbound packet produces, so say whether
+            -- the rules that would let one in are actually in place.
+            UIManager:show(InfoMessage:new{
+                text = string.format(_("%s (%s) did not answer.\n\nFirewall rules open: %s"),
+                    bulb.name, bulb.ip, tostring(Firewall.isOpen())),
+            })
+            return
+        end
+        UIManager:show(InfoMessage:new{
+            text = string.format(_("%s (%s) reports:\n\n%s\n\nFirewall rules open: %s"),
+                bulb.name, bulb.ip, Wiz.dumpPilot(state.result or {}),
+                tostring(Firewall.isOpen())),
+        })
+    end)
+end
+
 --- Show a list of bulbs for the user to choose one to remove.
 -- Note: this function is not listed in the spec's API table (an omission in the spec),
 -- but it is required for the "Remove a light…" button in showBulbManager.
@@ -398,11 +498,9 @@ function UI.showDiscoveryWizard(plugin)
     end
 
     local timeout = G_reader_settings:readSetting("wizlight_discovery_timeout") or 10
-    iptablesOpen()
     Trapper:info(_("Scanning for WiZ lights…"))
     local found_bulbs, err = Wiz.discover(timeout)
     Trapper:clear()
-    iptablesClose()
 
     if not found_bulbs then
         plugin:notify(string.format(
@@ -559,11 +657,9 @@ function UI.showAddByIP(plugin)
 
                     Trapper:wrap(function()
                         local timeout = G_reader_settings:readSetting("wizlight_discovery_timeout") or 10
-                        iptablesOpen()
                         Trapper:info(_("Contacting light…"))
                         local result, err = Wiz.probe(ip, timeout)
                         Trapper:clear()
-                        iptablesClose()
 
                         if not result then
                             plugin:notify(string.format(
@@ -621,11 +717,9 @@ function UI.rediscoverBulb(plugin, mac, retry_fn)
     end
 
     local timeout = G_reader_settings:readSetting("wizlight_discovery_timeout") or 10
-    iptablesOpen()
     Trapper:info(_("Scanning for WiZ lights…"))
     local bulbs, err = Wiz.discover(timeout)
     Trapper:clear()
-    iptablesClose()
 
     if not bulbs then
         plugin:notify(string.format(_("Discovery failed: %s"), err or "?"), 4)
