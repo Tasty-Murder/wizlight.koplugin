@@ -162,6 +162,15 @@ local READING_MODE_PARAMS = { state = true, sceneId = 0, temp = 3000, dimming = 
 function WizLight:toggleReadingMode(bulb)
     local reading = Bulbs.getReadingModeState(bulb.mac)
     if reading.active then
+        -- An empty snapshot means the capture never got a usable answer
+        -- from the bulb. setPilot({}) would be accepted and change
+        -- nothing, so say so rather than reporting a restore that didn't
+        -- happen; clear the flag either way so it can't get stuck on.
+        if not next(reading.saved or {}) then
+            Bulbs.setReadingModeState(bulb.mac, false, nil)
+            self:notify(_("Reading Mode off (no previous state to restore)"), 4)
+            return
+        end
         if self:send(function(ip) return Wiz.setPilot(ip, reading.saved) end, bulb.ip) then
             Bulbs.setReadingModeState(bulb.mac, false, nil)
             self:notify(string.format(_("Reading Mode deactivated (restored: %s)"),
