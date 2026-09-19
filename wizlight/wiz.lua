@@ -110,8 +110,14 @@ function Wiz.setBrightness(ip, dimming)
 end
 
 --- Set white colour temperature.  `temp` is in Kelvin (2200–6500).
+-- sceneId = 0 is required, not optional: a colour temperature is
+-- meaningless while a scene is rendering its own colours, and the official
+-- WiZ per-scene compatibility table has an "Adjustable dimming" column but
+-- no adjustable-temp one at all. Without explicitly leaving scene mode,
+-- a temp-only setPilot has nothing to act on and the scene keeps playing,
+-- so the change silently never lands.
 function Wiz.setColorTemp(ip, temp)
-    return Wiz.setPilot(ip, { state = true, temp = temp })
+    return Wiz.setPilot(ip, { state = true, sceneId = 0, temp = temp })
 end
 
 --- Set the animation speed for dynamic scenes. speed is an integer 10–200.
