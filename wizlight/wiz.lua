@@ -176,6 +176,26 @@ function Wiz.describeParams(params)
     return table.concat(parts, ", ")
 end
 
+--- Render every key/value a getPilot `.result` actually contains, sorted,
+--- one per line — including fields this plugin doesn't otherwise use
+--- (mac, rssi, src, schdPsetId, …). Unlike describeParams(), which only
+--- reports the handful of keys we control, this shows the unfiltered
+--- truth, so "the bulb ignored my change" can be told apart from "the
+--- plugin captured the wrong thing" without guessing.
+function Wiz.dumpPilot(result)
+    local keys = {}
+    for key in pairs(result) do
+        table.insert(keys, key)
+    end
+    if #keys == 0 then return "(empty response)" end
+    table.sort(keys)
+    local lines = {}
+    for _, key in ipairs(keys) do
+        table.insert(lines, key .. " = " .. tostring(result[key]))
+    end
+    return table.concat(lines, "\n")
+end
+
 --- Broadcast a registration message and collect all responding WiZ bulbs.
 -- Runs for `timeout` seconds (default 10) and returns an array of
 -- `{ ip = "...", mac = "..." }` tables.  The caller is responsible for

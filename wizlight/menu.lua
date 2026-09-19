@@ -200,6 +200,10 @@ local function buildSettingsMenu(plugin)
         },
         menuItemDiscoveryTimeout(),
         menuItemDefaultSceneSetting(plugin),
+        {
+            text     = _("Show bulb state…"),
+            callback = function() UI.showBulbState(plugin) end,
+        },
     }
 end
 

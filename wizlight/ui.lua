@@ -8,6 +8,7 @@ the plugin's notify(), send(), and errMsg() helpers.
 --]]--
 
 local ButtonDialog = require("ui/widget/buttondialog")
+local InfoMessage  = require("ui/widget/infomessage")
 local InputDialog  = require("ui/widget/inputdialog")
 local SpinWidget   = require("ui/widget/spinwidget")
 local Trapper      = require("ui/trapper")
@@ -435,6 +436,24 @@ function UI.showDefaultSceneSetting(plugin)
             showTempStep(spin.value)
         end,
     })
+end
+
+-- ── bulb state diagnostic ────────────────────────────────────────────────────
+
+--- Show the bulb's raw getPilot response, verbatim. This is the ground
+--- truth for "did my change actually reach the bulb?" — if the values here
+--- don't move after adjusting brightness/temperature, the bulb rejected or
+--- ignored the command, which is a very different problem from the plugin
+--- capturing or displaying the wrong thing.
+function UI.showBulbState(plugin)
+    plugin:withBulb(function(bulb)
+        local state = plugin:send(Wiz.getPilot, bulb.ip)
+        if not state then return end
+        UIManager:show(InfoMessage:new{
+            text = string.format(_("%s (%s) reports:\n\n%s"),
+                bulb.name, bulb.ip, Wiz.dumpPilot(state.result or {})),
+        })
+    end)
 end
 
 --- Show a list of bulbs for the user to choose one to remove.
