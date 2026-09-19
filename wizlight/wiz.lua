@@ -13,34 +13,73 @@ local logger    = require("logger")
 local socket    = require("socket")
 
 local WIZ_PORT = 38899
-local TIMEOUT  = 3  -- seconds
+local TIMEOUT  = 3    -- total seconds to wait for a reply, across retries
+local POLL     = 0.25 -- how long each individual receive blocks for
+local RESEND   = 0.5  -- resend the datagram this often while waiting
+
+-- Error codes the bulb reports JSON-RPC style.
+local ERR_INVALID_PARAMS = -32602
 
 local Wiz = {}
 
 --- Send a raw JSON string to a bulb and return the parsed response.
-local function sendUDP(ip, message)
+-- Returns (decoded, nil) on success, or (nil, message, code) on failure,
+-- where `code` is the bulb's error code when it actively rejected the
+-- command rather than staying silent.
+--
+-- `expect_method` is the method name the reply must carry. A bulb that has
+-- been registered (which discovery does) pushes unsolicited `syncPilot`
+-- heartbeats to this port; those parse perfectly well but carry `params`
+-- instead of `result`, so treating one as our answer silently yields an
+-- empty state. Anything that isn't the reply we asked for is skipped.
+local function sendUDP(ip, message, expect_method)
     local udp = socket.udp()
-    udp:settimeout(TIMEOUT)
+    udp:settimeout(POLL)
 
-    local ok, err = udp:sendto(message, ip, WIZ_PORT)
+    local ok, send_err = udp:sendto(message, ip, WIZ_PORT)
     if not ok then
         udp:close()
-        return nil, err
+        return nil, send_err
     end
 
-    local data = udp:receive()
+    local last_err  = "timeout – bulb did not respond"
+    local deadline  = socket.gettime() + TIMEOUT
+    local next_send = socket.gettime() + RESEND
+
+    while socket.gettime() < deadline do
+        local data = udp:receive()
+        if data then
+            local decoded, decode_err = rapidjson.decode(data)
+            if not decoded then
+                last_err = "invalid JSON from bulb: " .. (decode_err or "?")
+            elseif decoded.error then
+                -- An outright rejection. Reporting this as success is what
+                -- made failed commands look like they had worked.
+                local err = decoded.error
+                udp:close()
+                logger.warn("wizlight: bulb rejected command:", err.message, err.code)
+                return nil,
+                    string.format("bulb rejected the command: %s (code %s)",
+                        tostring(err.message), tostring(err.code)),
+                    err.code
+            elseif decoded.method == expect_method then
+                udp:close()
+                return decoded
+            end
+            -- Otherwise it's a heartbeat or a stray reply: keep waiting.
+        end
+
+        -- Retransmit periodically rather than trusting one datagram to
+        -- survive the trip. The total wait stays bounded by TIMEOUT.
+        local now = socket.gettime()
+        if now >= next_send then
+            udp:sendto(message, ip, WIZ_PORT)
+            next_send = now + RESEND
+        end
+    end
+
     udp:close()
-
-    if not data then
-        return nil, "timeout – bulb did not respond"
-    end
-
-    local decoded, decode_err = rapidjson.decode(data)
-    if not decoded then
-        return nil, "invalid JSON from bulb: " .. (decode_err or "?")
-    end
-
-    return decoded
+    return nil, last_err
 end
 
 --- Determine this device's local IP via KOReader's NetworkMgr + UDP routing
@@ -82,16 +121,30 @@ function Wiz.getPilot(ip)
         method = "getPilot",
         params = rapidjson.object({}),
     })
-    return sendUDP(ip, msg)
+    return sendUDP(ip, msg, "getPilot")
 end
 
 --- Send a `setPilot` request with the given params table.
+-- Firmware disagrees about `sceneId = 0` ("no scene, plain white"): older
+-- builds want it spelled out to leave scene mode, while newer ones reject
+-- the whole command with "Invalid params" when it's present. Neither is
+-- detectable up front, so send the explicit form first and fall back to
+-- dropping sceneId if — and only if — the bulb rejects it outright. A
+-- rejection is detectable; "accepted but ignored" would not be.
 function Wiz.setPilot(ip, params)
-    local msg = rapidjson.encode({
-        method = "setPilot",
-        params = params,
-    })
-    return sendUDP(ip, msg)
+    local msg = rapidjson.encode({ method = "setPilot", params = params })
+    local decoded, err, code = sendUDP(ip, msg, "setPilot")
+    if decoded then return decoded end
+
+    if code == ERR_INVALID_PARAMS and params.sceneId == 0 then
+        local retry = {}
+        for key, value in pairs(params) do retry[key] = value end
+        retry.sceneId = nil
+        logger.info("wizlight: bulb rejected sceneId=0, retrying without it")
+        return sendUDP(ip, rapidjson.encode({ method = "setPilot", params = retry }), "setPilot")
+    end
+
+    return nil, err
 end
 
 --- Turn the bulb on (preserving its last colour/scene).
