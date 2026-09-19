@@ -106,19 +106,26 @@ end
 --- Call action_fn(ip). On failure, show DHCP dialog if a registry bulb is active,
 --- or a plain toast for non-registry errors.
 ---
---- Design note: any failure for the active registry bulb triggers the DHCP dialog,
---- including transient errors (timeouts, packet loss). This is intentional: in practice
---- the overwhelming majority of "bulb unreachable" events on a home LAN are DHCP changes
---- after a router restart, not transient packet loss. The user can always tap "Dismiss"
---- for a transient failure. Distinguishing DHCP-change from transient error at the
---- protocol level would require retry logic that adds complexity without much benefit
+--- Design note: a *silent* failure for the active registry bulb triggers the DHCP
+--- dialog, including transient errors (timeouts, packet loss). This is intentional: in
+--- practice the overwhelming majority of "bulb unreachable" events on a home LAN are DHCP
+--- changes after a router restart, not transient packet loss. The user can always tap
+--- "Dismiss" for a transient failure. Distinguishing DHCP-change from transient error at
+--- the protocol level would require retry logic that adds complexity without much benefit
 --- for a single-user home-network plugin.
+---
+--- A bulb that *answered* and refused the command is a different story: it's plainly
+--- reachable, so offering to hunt for a new IP would be nonsense. Those get the error
+--- text instead, which is also what makes a refusal legible while debugging.
 function WizLight:send(action_fn, ip)
-    local result, err = action_fn(ip)
+    local result, err, code = action_fn(ip)
     if not result then
         logger.warn("wizlight: command failed –", err)
         local active = Bulbs.getActive()
-        if active and active.ip == ip then
+        if Wiz.isRefusal(code) then
+            -- Not "unreachable": it answered. Show what it actually said.
+            self:notify(string.format(_("WiZ light: %s"), err or "unknown error"), 5)
+        elseif active and active.ip == ip then
             -- Offer re-discovery in case IP changed via DHCP
             UI.showDHCPDialog(self, active.name, active.mac, function()
                 -- Retry with fresh IP after re-discovery

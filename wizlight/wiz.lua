@@ -19,8 +19,19 @@ local RESEND   = 0.5  -- resend the datagram this often while waiting
 
 -- Error codes the bulb reports JSON-RPC style.
 local ERR_INVALID_PARAMS = -32602
+-- Our own marker for "the bulb answered but refused", used where there is
+-- no code of its own to pass along. Any code at all tells a caller the
+-- bulb is reachable, which is the distinction that matters to them.
+local ERR_REFUSED = "refused"
 
 local Wiz = {}
+
+--- True when a failure came back *from* the bulb rather than from silence.
+-- A reachable bulb that refuses a command should not be reported as
+-- missing, and must not trigger DHCP re-discovery.
+function Wiz.isRefusal(code)
+    return code ~= nil
+end
 
 --- Send a raw JSON string to a bulb and return the parsed response.
 -- Returns (decoded, nil) on success, or (nil, message, code) on failure,
@@ -143,18 +154,21 @@ function Wiz.setPilot(ip, params)
         for key, value in pairs(params) do retry[key] = value end
         retry.sceneId = nil
         logger.info("wizlight: bulb rejected sceneId=0, retrying without it")
-        decoded, err = sendUDP(ip, rapidjson.encode({ method = "setPilot", params = retry }),
+        decoded, err, code = sendUDP(ip, rapidjson.encode({ method = "setPilot", params = retry }),
             "setPilot")
     end
 
-    if not decoded then return nil, err end
+    -- Propagate the code: callers distinguish "the bulb never answered"
+    -- from "the bulb answered and refused", which want different handling.
+    if not decoded then return nil, err, code end
 
     -- A successful setPilot answers {"result":{"success":true}}. Only treat
     -- an explicit false as failure: firmware that omits the field entirely
     -- shouldn't be reported as broken.
     if decoded.result and decoded.result.success == false then
         logger.warn("wizlight: bulb reported setPilot success=false")
-        return nil, "bulb did not apply the command"
+        -- The bulb did answer, so this is a refusal, not a missing bulb.
+        return nil, "bulb did not apply the command", ERR_REFUSED
     end
 
     return decoded
