@@ -32,7 +32,7 @@ color temperature, and lighting scenes without leaving your book.
 ## Platform
 
 **Kindle only.** This plugin is designed for KOReader running on Kindle devices.
-The discovery mechanism requires `iptables` with root access, which Android's
+Talking to the bulbs requires `iptables` with root access, which Android's
 security model does not permit. The spirit of this plugin is to let you control
 your lights from your Kindle — without reaching for your phone.
 
@@ -43,8 +43,13 @@ your lights from your Kindle — without reaching for your phone.
 - No account, cloud service, or app required — the plugin communicates with
   your bulbs directly over your local network
 - The device must support `iptables` and KOReader must have permission to
-  modify firewall rules — the plugin opens a temporary rule during bulb
-  discovery to allow UDP responses from the network
+  modify firewall rules. Bulbs answer over UDP, and on a locked-down device
+  those answers can be dropped on the way back in — the command still
+  reaches the bulb and takes effect, but the plugin never hears the reply.
+  The plugin therefore adds two `ACCEPT` rules for UDP port 38899 (one for
+  each direction the replies can take) the first time it contacts a bulb,
+  and removes them again when KOReader closes. A session that never uses
+  the plugin never touches `iptables`.
 
 > **Note:** WiZ bulbs must be set up with the WiZ app at least once before
 > the plugin can discover them.

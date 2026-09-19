@@ -12,6 +12,8 @@ local rapidjson = require("rapidjson")
 local logger    = require("logger")
 local socket    = require("socket")
 
+local Firewall  = require("wizlight.firewall")
+
 local WIZ_PORT = 38899
 local TIMEOUT  = 3    -- total seconds to wait for a reply, across retries
 local POLL     = 0.25 -- how long each individual receive blocks for
@@ -44,6 +46,12 @@ end
 -- instead of `result`, so treating one as our answer silently yields an
 -- empty state. Anything that isn't the reply we asked for is skipped.
 local function sendUDP(ip, message, expect_method)
+    -- Every byte this module sends or receives passes through here, so
+    -- this is the one place that can guarantee the reply is allowed back
+    -- in. Leaving it to individual callers is what left ordinary commands
+    -- unprotected while only discovery bothered.
+    Firewall.ensureOpen()
+
     local udp = socket.udp()
     udp:settimeout(POLL)
 
@@ -288,6 +296,8 @@ end
 function Wiz.discover(timeout)
     timeout = timeout or 10
 
+    Firewall.ensureOpen()
+
     local local_ip = resolveLocalIP()
     logger.info("wizlight discover: local_ip =", local_ip)
 
@@ -369,6 +379,8 @@ end
 -- Returns `{ ip = ip, mac = "..." }` on success or `(nil, error_string)` on failure.
 function Wiz.probe(ip, timeout)
     timeout = timeout or 10
+
+    Firewall.ensureOpen()
 
     local local_ip = resolveLocalIP()
     local msg = buildRegistrationMessage(local_ip)

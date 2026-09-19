@@ -15,10 +15,11 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger          = require("logger")
 local _               = require("gettext")
 
-local Wiz   = require("wizlight.wiz")
-local Bulbs = require("wizlight.bulbs")
-local Menu  = require("wizlight.menu")
-local UI    = require("wizlight.ui")
+local Wiz      = require("wizlight.wiz")
+local Bulbs    = require("wizlight.bulbs")
+local Menu     = require("wizlight.menu")
+local UI       = require("wizlight.ui")
+local Firewall = require("wizlight.firewall")
 
 -- Curated list of WiZ scenes relevant to reading and relaxation.
 --
@@ -79,6 +80,21 @@ function WizLight:init()
     self:onDispatcherRegisterActions()
     Bulbs.load()
     self.ui.menu:registerToMainMenu(self)
+end
+
+--- Take the firewall rules back down on the way out. The rules are opened
+--- lazily on first contact with a bulb rather than here, so a KOReader
+--- session that never touches the plugin never touches iptables either.
+--- Both hooks are wired because whichever fires first wins and the second
+--- is a no-op; if neither does (a crash), the rules don't survive a reboot.
+function WizLight:onCloseWidget()
+    Firewall.close()
+    Bulbs.close()
+end
+
+function WizLight:onExit()
+    Firewall.close()
+    Bulbs.close()
 end
 
 -- ── helpers ──────────────────────────────────────────────────────────────────

@@ -15,22 +15,11 @@ local Trapper      = require("ui/trapper")
 local UIManager    = require("ui/uimanager")
 local _            = require("gettext")
 
-local Wiz   = require("wizlight.wiz")
-local Bulbs = require("wizlight.bulbs")
+local Wiz      = require("wizlight.wiz")
+local Bulbs    = require("wizlight.bulbs")
+local Firewall = require("wizlight.firewall")
 
 local UI = {}
-
--- ── iptables helpers (local to ui.lua; main.lua no longer contains these) ──────
-
-local IPT_RULE = "INPUT -p udp --dport 38899 -j ACCEPT"
-
-local function iptablesOpen()
-    os.execute("iptables -I " .. IPT_RULE .. " 2>/dev/null")
-end
-
-local function iptablesClose()
-    os.execute("iptables -D " .. IPT_RULE .. " 2>/dev/null")
-end
 
 --- Format a raw WiZ MAC string (e.g. "a8bb50a4f94d") as "a8:bb:50:a4:f9:4d".
 local function formatMAC(mac)
@@ -448,10 +437,20 @@ end
 function UI.showBulbState(plugin)
     plugin:withBulb(function(bulb)
         local state = plugin:send(Wiz.getPilot, bulb.ip)
-        if not state then return end
+        if not state then
+            -- Getting here at all means no reply arrived, which is the
+            -- symptom a dropped inbound packet produces, so say whether
+            -- the rules that would let one in are actually in place.
+            UIManager:show(InfoMessage:new{
+                text = string.format(_("%s (%s) did not answer.\n\nFirewall rules open: %s"),
+                    bulb.name, bulb.ip, tostring(Firewall.isOpen())),
+            })
+            return
+        end
         UIManager:show(InfoMessage:new{
-            text = string.format(_("%s (%s) reports:\n\n%s"),
-                bulb.name, bulb.ip, Wiz.dumpPilot(state.result or {})),
+            text = string.format(_("%s (%s) reports:\n\n%s\n\nFirewall rules open: %s"),
+                bulb.name, bulb.ip, Wiz.dumpPilot(state.result or {}),
+                tostring(Firewall.isOpen())),
         })
     end)
 end
@@ -499,11 +498,9 @@ function UI.showDiscoveryWizard(plugin)
     end
 
     local timeout = G_reader_settings:readSetting("wizlight_discovery_timeout") or 10
-    iptablesOpen()
     Trapper:info(_("Scanning for WiZ lights…"))
     local found_bulbs, err = Wiz.discover(timeout)
     Trapper:clear()
-    iptablesClose()
 
     if not found_bulbs then
         plugin:notify(string.format(
@@ -660,11 +657,9 @@ function UI.showAddByIP(plugin)
 
                     Trapper:wrap(function()
                         local timeout = G_reader_settings:readSetting("wizlight_discovery_timeout") or 10
-                        iptablesOpen()
                         Trapper:info(_("Contacting light…"))
                         local result, err = Wiz.probe(ip, timeout)
                         Trapper:clear()
-                        iptablesClose()
 
                         if not result then
                             plugin:notify(string.format(
@@ -722,11 +717,9 @@ function UI.rediscoverBulb(plugin, mac, retry_fn)
     end
 
     local timeout = G_reader_settings:readSetting("wizlight_discovery_timeout") or 10
-    iptablesOpen()
     Trapper:info(_("Scanning for WiZ lights…"))
     local bulbs, err = Wiz.discover(timeout)
     Trapper:clear()
-    iptablesClose()
 
     if not bulbs then
         plugin:notify(string.format(_("Discovery failed: %s"), err or "?"), 4)
