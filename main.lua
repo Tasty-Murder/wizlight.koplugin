@@ -133,7 +133,12 @@ end
 --- A bulb that *answered* and refused the command is a different story: it's plainly
 --- reachable, so offering to hunt for a new IP would be nonsense. Those get the error
 --- text instead, which is also what makes a refusal legible while debugging.
-function WizLight:send(action_fn, ip)
+---
+--- `retry` is what to run once re-discovery has found the bulb again. Multi-step
+--- actions must pass it: by default only `action_fn` is repeated, and for
+--- something like toggleBulb() that's the getPilot that failed, not the
+--- setPilot the user actually asked for.
+function WizLight:send(action_fn, ip, retry)
     local result, err, code = action_fn(ip)
     if not result then
         logger.warn("wizlight: command failed –", err)
@@ -143,10 +148,10 @@ function WizLight:send(action_fn, ip)
             self:notify(string.format(_("WiZ light: %s"), err or "unknown error"), 5)
         elseif active and active.ip == ip then
             -- Offer re-discovery in case IP changed via DHCP
-            UI.showDHCPDialog(self, active.name, active.mac, function()
+            UI.showDHCPDialog(self, active.name, active.mac, retry or function()
                 -- Retry with fresh IP after re-discovery
                 local refreshed = Bulbs.getActive()
-                if refreshed then action_fn(refreshed.ip) end
+                if refreshed then self:send(action_fn, refreshed.ip) end
             end)
         else
             self:notify(self:errMsg(err), 4)
@@ -160,7 +165,10 @@ end
 -- still triggers the DHCP re-discovery dialog, same as every other action
 -- (Brightness, Color Temperature, Effect Speed, Scenes).
 function WizLight:toggleBulb(ip)
-    local state = self:send(Wiz.getPilot, ip)
+    local state = self:send(Wiz.getPilot, ip, function()
+        local refreshed = Bulbs.getActive()
+        if refreshed then self:toggleBulb(refreshed.ip) end
+    end)
     if not state then return end
 
     local is_on = state.result and state.result.state
@@ -183,6 +191,7 @@ local READING_MODE_PARAMS = { state = true, sceneId = 0, temp = 3000, dimming = 
 --- Toggle Reading Mode for `bulb`. Activating snapshots the bulb's current
 --- state so it can be restored; deactivating restores that snapshot.
 function WizLight:toggleReadingMode(bulb)
+    local retry = function() self:toggleReadingMode(bulb) end
     local reading = Bulbs.getReadingModeState(bulb.mac)
     if reading.active then
         -- An empty snapshot means the capture never got a usable answer
@@ -197,16 +206,16 @@ function WizLight:toggleReadingMode(bulb)
         -- Re-normalise: snapshots stored by older versions copied every
         -- getPilot key, scene and colour temperature together.
         local restore = Wiz.pilotToParams(reading.saved)
-        if self:send(function(ip) return Wiz.setPilot(ip, restore) end, bulb.ip) then
+        if self:send(function(ip) return Wiz.setPilot(ip, restore) end, bulb.ip, retry) then
             Bulbs.setReadingModeState(bulb.mac, false, nil)
             self:notify(string.format(_("Reading Mode deactivated (restored: %s)"),
                 Wiz.describeParams(restore)), 4)
         end
     else
-        local state = self:send(Wiz.getPilot, bulb.ip)
+        local state = self:send(Wiz.getPilot, bulb.ip, retry)
         if not state then return end
         local saved = Wiz.pilotToParams(state.result or {})
-        if self:send(function(ip) return Wiz.setPilot(ip, READING_MODE_PARAMS) end, bulb.ip) then
+        if self:send(function(ip) return Wiz.setPilot(ip, READING_MODE_PARAMS) end, bulb.ip, retry) then
             Bulbs.setReadingModeState(bulb.mac, true, saved)
             self:notify(string.format(_("Reading Mode activated (was: %s)"),
                 Wiz.describeParams(saved)), 4)
@@ -228,7 +237,8 @@ end
 --- Activate `scene` on `bulb`.
 function WizLight:activateScene(bulb, scene)
     local params = Bulbs.buildSceneParams(scene.id)
-    if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip) then
+    if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip,
+            function() self:activateScene(bulb, scene) end) then
         clearReadingMode(bulb)
         self:notify(string.format(_("Scene: %s"), scene.name))
     end
@@ -251,7 +261,8 @@ Hold "Default Scene" to save your current light settings as the default.]]), 5)
     -- white, which very old saves lacked).
     local params = Wiz.pilotToParams(saved)
     params.state = true
-    if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip) then
+    if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip,
+            function() self:activateDefaultScene(bulb) end) then
         clearReadingMode(bulb)
         self:notify(string.format(_("Default scene activated: %s"), Wiz.describeParams(params)), 4)
     end
@@ -271,7 +282,7 @@ end
 
 --- Snapshot the bulb's current live state and save it as the Default Scene.
 function WizLight:saveDefaultScene(bulb)
-    local state = self:send(Wiz.getPilot, bulb.ip)
+    local state = self:send(Wiz.getPilot, bulb.ip, function() self:saveDefaultScene(bulb) end)
     if not state then return end
     local params = Wiz.pilotToParams(state.result or {})
     -- Activating a default means "light the room like this". Saving the
