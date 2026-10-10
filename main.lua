@@ -11,6 +11,7 @@ Supports multiple named bulbs with a blink-to-verify discovery wizard.
 local Dispatcher      = require("dispatcher")  -- luacheck:ignore
 local UIManager       = require("ui/uimanager")
 local InfoMessage     = require("ui/widget/infomessage")
+local NetworkMgr      = require("ui/network/manager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger          = require("logger")
 local _               = require("gettext")
@@ -109,11 +110,18 @@ function WizLight:errMsg(err)
     return string.format(_("WiZ light unreachable: %s"), err or "unknown error")
 end
 
---- Run callback(bulb) only when an active bulb is configured.
+--- Run callback(bulb) only when an active bulb is configured, and only
+--- once Wi-Fi is connected. Kindles drop Wi-Fi when idle; without this a
+--- command would time out and then offer to re-discover a bulb whose
+--- address never changed. KOReader asks to turn Wi-Fi on and runs the
+--- action again once connected (only the LAN is needed, not the internet).
 function WizLight:withBulb(callback)
     local bulb = Bulbs.getActive()
     if not bulb then
         self:notify(_("No WiZ light configured.\nGo to WiZ Light → Settings → Manage Lights."), 4)
+        return
+    end
+    if NetworkMgr:willRerunWhenConnected(function() self:withBulb(callback) end) then
         return
     end
     callback(bulb)

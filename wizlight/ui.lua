@@ -10,6 +10,7 @@ the plugin's notify(), send(), and errMsg() helpers.
 local ButtonDialog = require("ui/widget/buttondialog")
 local InfoMessage  = require("ui/widget/infomessage")
 local InputDialog  = require("ui/widget/inputdialog")
+local NetworkMgr   = require("ui/network/manager")
 local SpinWidget   = require("ui/widget/spinwidget")
 local Trapper      = require("ui/trapper")
 local UIManager    = require("ui/uimanager")
@@ -491,6 +492,11 @@ end
 --- Run the UDP broadcast scan in a Trapper coroutine, then hand off
 --- to the callback-driven wizard flow via UIManager:nextTick.
 function UI.showDiscoveryWizard(plugin)
+    -- Same reasoning as WizLight:withBulb: a scan with Wi-Fi off would
+    -- just report "no lights found".
+    if NetworkMgr:willRerunWhenConnected(function() UI.showDiscoveryWizard(plugin) end) then
+        return
+    end
     if not coroutine.running() then
         Trapper:wrap(function() UI.showDiscoveryWizard(plugin) end)
         return
@@ -637,6 +643,9 @@ end
 --- Prompt for an IP address, probe the bulb for its MAC, then run the
 --- blink → confirm → name wizard for that single bulb.
 function UI.showAddByIP(plugin)
+    if NetworkMgr:willRerunWhenConnected(function() UI.showAddByIP(plugin) end) then
+        return
+    end
     local ip_dialog
     ip_dialog = InputDialog:new{
         title      = _("Enter the bulb's IP address"),
