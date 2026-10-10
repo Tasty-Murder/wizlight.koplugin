@@ -1,23 +1,62 @@
+# git-cliff configuration: generates the GitHub release notes.
+# Used by .github/workflows/release.yml (`git cliff --current`).
+# Preview locally with:  git cliff --latest   (or --unreleased)
+
 [changelog]
+# Group names carry a hidden "<!-- N -->" prefix so they sort in a fixed order
+# (Features first); `striptags` removes it again when rendering.
+# Commits sharing a subject (e.g. the same change split across several
+# commits) are listed once.
 body = """
-{% for group, commits in commits | group_by(attribute="group") %}\
-### {{ group }}
+{%- set_global seen = "|" -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
 {% for commit in commits %}\
-- {{ commit.message | upper_first }}
+{%- set msg = commit.message | trim | lower -%}
+{%- set key = "|" ~ msg ~ "|" -%}
+{%- if key in seen %}{% continue %}{% endif -%}
+{%- set_global seen = seen ~ key -%}
+- {% if commit.breaking %}**BREAKING** {% endif %}\
+{% if commit.scope %}**{{ commit.scope }}:** {% endif %}\
+{{ commit.message | upper_first | trim }}\
+{% if commit.remote.pr_number %} ([#{{ commit.remote.pr_number }}](https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/pull/{{ commit.remote.pr_number }})){% endif %} \
+([`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/commit/{{ commit.id }}))
 {% endfor %}\
-{% endfor %}\
+{% endfor %}
+{%- if version and previous.version %}
+**Full changelog:** [{{ previous.version }}...{{ version }}](https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/compare/{{ previous.version }}...{{ version }})
+{% endif %}
 """
 trim = true
 
+[remote.github]
+owner = "Tasty-Murder"
+repo = "wizlight.koplugin"
+
 [git]
 conventional_commits = true
+# Only commits matched by a parser below appear in the notes; merges and
+# housekeeping are dropped instead of landing in an unnamed group.
 filter_unconventional = false
+filter_commits = true
+split_commits = false
+protect_breaking_commits = true
+sort_commits = "oldest"
+topo_order = false
 tag_pattern = "v[0-9].*"
 commit_parsers = [
-    { message = "^feat",     group = "Features"       },
-    { message = "^fix",      group = "Bug Fixes"      },
-    { message = "^refactor", group = "Improvements"   },
-    { message = "^docs",     group = "Documentation"  },
-    { message = "^chore",    skip  = true             },
+    # Noise: merge commits, release/version bumps, CI and tooling-only changes.
+    { message = "^Merge ",          skip = true },
+    { message = "^chore",           skip = true },
+    { message = "^ci",              skip = true },
+    { message = "^build",           skip = true },
+    { message = "^style",           skip = true },
+    { message = "^test",            skip = true },
+    { message = "^revert",          skip = true },
+    # Shown to users, in this order.
+    { message = "^feat",            group = "<!-- 0 -->Features" },
+    { message = "^fix",             group = "<!-- 1 -->Bug Fixes" },
+    { message = "^perf",            group = "<!-- 2 -->Performance" },
+    { message = "^refactor",        group = "<!-- 3 -->Improvements" },
+    { message = "^docs",            group = "<!-- 4 -->Documentation" },
 ]
-filter_commits = false
