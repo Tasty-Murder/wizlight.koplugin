@@ -219,21 +219,52 @@ function Wiz.setSpeed(ip, speed)
     return Wiz.setPilot(ip, { speed = speed })
 end
 
--- Keys from a getPilot `.result` table that are valid to pass straight back
--- into a setPilot call.
-local PILOT_PARAM_KEYS = {
-    "state", "sceneId", "temp", "dimming", "speed", "r", "g", "b", "c", "w",
-}
+-- Scenes whose animation speed is adjustable, per the "Adjustable speed"
+-- column of the WiZ Pro API light-mode table. getPilot reports a `speed`
+-- for every scene, static ones included, so it can't be trusted on its own
+-- to say whether sending one back means anything.
+local DYNAMIC_SCENES = {}
+for _, id in ipairs({ 1, 2, 3, 4, 5, 6, 7, 8, 20, 21, 22, 23, 24, 25, 26, 27,
+                      28, 29, 30, 31, 32, 33 }) do
+    DYNAMIC_SCENES[id] = true
+end
 
---- Convert a decoded getPilot `.result` table into a setPilot-safe params
---- table, passing through only the known controllable keys that are
---- present. Used to snapshot a bulb's current state so it can be restored
---- later (Reading Mode revert, Default Scene "save current").
+local RGBCW_KEYS = { "r", "g", "b", "c", "w" }
+
+--- Convert a getPilot `.result` table into a setPilot params table that
+--- reproduces the same light, for snapshot-and-restore (Reading Mode,
+--- Default Scene "save current").
+---
+--- getPilot doesn't describe one mode, it describes *everything*: in scene
+--- mode it reports sceneId alongside the temp/dimming that scene happens to
+--- be rendering, e.g. {sceneId=12, speed=100, temp=4200, dimming=47}. The
+--- bulb's modes — scene, colour temperature, RGB/CW/WW — are mutually
+--- exclusive, so copying every key back produces a setPilot that asks for
+--- a scene *and* a colour temperature at once, which firmware either
+--- rejects or resolves in its own favour. Exactly one mode is kept here.
+---
+--- Also safe to run on an already-converted table (it's idempotent), which
+--- lets snapshots stored by older versions be cleaned up on the way out.
 function Wiz.pilotToParams(result)
-    local params = {}
-    for _, key in ipairs(PILOT_PARAM_KEYS) do
-        if result[key] ~= nil then
-            params[key] = result[key]
+    local params = { state = result.state, dimming = result.dimming }
+    local scene = result.sceneId
+    if result.schdPsetId then
+        -- Rhythm mode: sceneId is whatever the schedule is playing right
+        -- now, not something anyone chose, and replaying it would pin the
+        -- bulb to that one scene. Brightness is all that's portable.
+        return params
+    elseif scene and scene ~= 0 then
+        params.sceneId = scene
+        if DYNAMIC_SCENES[scene] then params.speed = result.speed end
+    elseif result.temp then
+        params.sceneId = 0
+        params.temp = result.temp
+    else
+        for _, key in ipairs(RGBCW_KEYS) do
+            if result[key] ~= nil then
+                params.sceneId = 0
+                params[key] = result[key]
+            end
         end
     end
     return params
@@ -248,6 +279,9 @@ end
 --- that setPilot silently failed.
 function Wiz.describeParams(params)
     local parts = {}
+    -- A snapshot of a switched-off bulb still carries its colour settings;
+    -- without this it would read as though the light had been on.
+    if params.state == false then table.insert(parts, "off") end
     -- sceneId 0 is WiZ's way of saying "no scene, plain white", and this
     -- plugin now sends it deliberately — rendering it as "scene 0" would
     -- describe the exact opposite of what it means.
@@ -262,10 +296,7 @@ function Wiz.describeParams(params)
     end
     if params.c then table.insert(parts, "cold " .. params.c) end
     if params.w then table.insert(parts, "warm " .. params.w) end
-    if #parts == 0 then
-        if params.state == false then return "off" end
-        return "on"
-    end
+    if #parts == 0 then return "on" end
     return table.concat(parts, ", ")
 end
 

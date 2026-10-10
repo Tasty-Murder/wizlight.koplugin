@@ -194,10 +194,13 @@ function WizLight:toggleReadingMode(bulb)
             self:notify(_("Reading Mode off (no previous state to restore)"), 4)
             return
         end
-        if self:send(function(ip) return Wiz.setPilot(ip, reading.saved) end, bulb.ip) then
+        -- Re-normalise: snapshots stored by older versions copied every
+        -- getPilot key, scene and colour temperature together.
+        local restore = Wiz.pilotToParams(reading.saved)
+        if self:send(function(ip) return Wiz.setPilot(ip, restore) end, bulb.ip) then
             Bulbs.setReadingModeState(bulb.mac, false, nil)
             self:notify(string.format(_("Reading Mode deactivated (restored: %s)"),
-                Wiz.describeParams(reading.saved)), 4)
+                Wiz.describeParams(restore)), 4)
         end
     else
         local state = self:send(Wiz.getPilot, bulb.ip)
@@ -239,15 +242,14 @@ Hold "Default Scene" to save your current light settings as the default.]]), 5)
     if Bulbs.getReadingModeState(bulb.mac).active then
         Bulbs.setReadingModeState(bulb.mac, false, nil)
     end
-    -- Self-healing: a default saved before the sceneId=0 fix (or one
-    -- captured while getPilot happened not to report sceneId at all) may
-    -- have no sceneId of its own. Default Scene means "plain white, no
-    -- scene" unless it was explicitly captured while a scene was showing
-    -- (in which case saved.sceneId is already that scene's real id), so
-    -- default the outgoing copy to 0 without touching the stored value.
-    local params = {}
-    for k, v in pairs(saved) do params[k] = v end
-    if params.sceneId == nil then params.sceneId = 0 end
+    -- Self-healing for defaults saved by older versions, without touching
+    -- the stored value: those copied every getPilot key, so a default
+    -- captured during a scene asks for the scene *and* a colour
+    -- temperature, and one captured with the bulb off would switch it off.
+    -- pilotToParams keeps one coherent mode (and adds sceneId=0 to plain
+    -- white, which very old saves lacked).
+    local params = Wiz.pilotToParams(saved)
+    params.state = true
     if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip) then
         self:notify(string.format(_("Default scene activated: %s"), Wiz.describeParams(params)), 4)
     end
@@ -270,6 +272,9 @@ function WizLight:saveDefaultScene(bulb)
     local state = self:send(Wiz.getPilot, bulb.ip)
     if not state then return end
     local params = Wiz.pilotToParams(state.result or {})
+    -- Activating a default means "light the room like this". Saving the
+    -- bulb's off state would make the button switch the light off instead.
+    params.state = true
     Bulbs.setDefaultScene(params)
     self:notify(string.format(_("Default scene saved: %s"), Wiz.describeParams(params)), 4)
 end
