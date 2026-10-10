@@ -256,6 +256,12 @@ end
 --- Check GitHub for a newer release and offer to install it.
 -- `plugin_dir` is the plugin's own directory (the loader's `self.path`).
 function Updater.checkForUpdates(plugin_dir)
+    -- Everything below renames this directory; never guess at it.
+    if type(plugin_dir) ~= "string" or plugin_dir == "" then
+        logger.warn("wizlight updater: plugin path unknown:", plugin_dir)
+        notify(_("Cannot update: the plugin's location is unknown."), 5)
+        return
+    end
     if NetworkMgr:willRerunWhenOnline(function() Updater.checkForUpdates(plugin_dir) end) then
         return
     end
