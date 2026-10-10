@@ -21,34 +21,36 @@ local function menuItemPower(plugin)
     return {
         text     = _("Toggle On / Off"),
         callback = function()
-            plugin:withBulb(function(bulb)
-                local state, err = Wiz.getPilot(bulb.ip)
-                if not state then
-                    plugin:notify(plugin:errMsg(err), 4)
-                    return
-                end
-                local is_on = state.result and state.result.state
-                if is_on then
-                    plugin:send(Wiz.turnOff, bulb.ip)
-                else
-                    plugin:send(Wiz.turnOn, bulb.ip)
-                end
-            end)
+            plugin:withBulb(function(bulb) plugin:toggleBulb(bulb.ip) end)
+        end,
+    }
+end
+
+local function menuItemDefaultScene(plugin)
+    return {
+        text     = _("Default Scene"),
+        callback = function()
+            plugin:withBulb(function(bulb) plugin:activateDefaultScene(bulb) end)
+        end,
+        hold_callback = function()
+            plugin:withBulb(function(bulb) plugin:saveDefaultScene(bulb) end)
         end,
     }
 end
 
 local function menuItemReadingMode(plugin)
     return {
-        text     = _("Reading Mode"),
+        text_func = function()
+            local active = Bulbs.getActive()
+            local on = active and Bulbs.getReadingModeState(active.mac).active
+            return on and _("Reading Mode - On") or _("Reading Mode - Off")
+        end,
+        checked_func = function()
+            local active = Bulbs.getActive()
+            return active and Bulbs.getReadingModeState(active.mac).active or false
+        end,
         callback = function()
-            plugin:withBulb(function(bulb)
-                -- Warm 3 000 K at 70 % – comfortable for extended reading.
-                local result, err = Wiz.setPilot(bulb.ip, { state = true, temp = 3000, dimming = 70 })
-                if not result then
-                    plugin:notify(plugin:errMsg(err), 4)
-                end
-            end)
+            plugin:withBulb(function(bulb) plugin:toggleReadingMode(bulb) end)
         end,
     }
 end
@@ -58,7 +60,8 @@ local function menuItemBrightness(plugin)
         text     = _("Brightness…"),
         callback = function()
             plugin:withBulb(function(bulb)
-                local saved = G_reader_settings:readSetting("wizlight_brightness") or 70
+                local saved = plugin:queryLiveField(bulb, "dimming")
+                    or G_reader_settings:readSetting("wizlight_brightness") or 70
                 UIManager:show(SpinWidget:new{
                     title_text      = _("Brightness"),
                     value           = saved,
@@ -84,7 +87,8 @@ local function menuItemColorTemp(plugin)
         text     = _("Color Temperature…"),
         callback = function()
             plugin:withBulb(function(bulb)
-                local saved = G_reader_settings:readSetting("wizlight_colortemp") or 3000
+                local saved = plugin:queryLiveField(bulb, "temp")
+                    or G_reader_settings:readSetting("wizlight_colortemp") or 3000
                 UIManager:show(SpinWidget:new{
                     title_text      = _("Color Temperature (K)"),
                     value           = saved,
@@ -131,24 +135,27 @@ local function menuItemEffectSpeed(plugin)
     }
 end
 
+local function sceneMenuItem(plugin, scene)
+    return {
+        text     = scene.name,
+        callback = function()
+            plugin:withBulb(function(bulb) plugin:activateScene(bulb, scene) end)
+        end,
+    }
+end
+
+--- Split plugin.SCENES into { Lighting Themes, Animated Scenes } menu items,
+-- grouped by whether the scene's animation-speed override actually does
+-- anything on the bulb (see the SCENES table comment in main.lua).
 local function buildScenesMenu(plugin)
-    local items = {}
+    local lighting_themes, animated = {}, {}
     for _i, scene in ipairs(plugin.SCENES) do
-        local s = scene
-        table.insert(items, {
-            text     = scene.name,
-            callback = function()
-                plugin:withBulb(function(bulb)
-                    local params      = Bulbs.buildSceneParams(s.id)
-                    local result, err = Wiz.setPilot(bulb.ip, params)
-                    if not result then
-                        plugin:notify(plugin:errMsg(err), 4)
-                    end
-                end)
-            end,
-        })
+        table.insert(scene.speed and animated or lighting_themes, sceneMenuItem(plugin, scene))
     end
-    return items
+    return {
+        { text = _("Lighting Themes"), sub_item_table = lighting_themes },
+        { text = _("Animated Scenes"), sub_item_table = animated },
+    }
 end
 
 local function menuItemDiscoveryTimeout()
@@ -172,6 +179,19 @@ local function menuItemDiscoveryTimeout()
     }
 end
 
+local function menuItemDefaultSceneSetting(plugin)
+    return {
+        text_func = function()
+            local current = Bulbs.getDefaultScene()
+            if current then
+                return string.format(_("Default Scene… (%s)"), Wiz.describeParams(current))
+            end
+            return _("Default Scene… (not set)")
+        end,
+        callback = function() UI.showDefaultSceneSetting(plugin) end,
+    }
+end
+
 local function buildSettingsMenu(plugin)
     return {
         {
@@ -179,6 +199,11 @@ local function buildSettingsMenu(plugin)
             callback = function() UI.showBulbManager(plugin) end,
         },
         menuItemDiscoveryTimeout(),
+        menuItemDefaultSceneSetting(plugin),
+        {
+            text     = _("Show bulb state…"),
+            callback = function() UI.showBulbState(plugin) end,
+        },
     }
 end
 
@@ -186,6 +211,7 @@ end
 function Menu.buildMenu(plugin)
     return {
         menuItemPower(plugin),
+        menuItemDefaultScene(plugin),
         menuItemReadingMode(plugin),
         menuItemBrightness(plugin),
         menuItemColorTemp(plugin),

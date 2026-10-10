@@ -6,15 +6,23 @@ color temperature, and lighting scenes without leaving your book.
 ## Features
 
 - Toggle your light on or off from the menu or a custom gesture
-- **Reading Mode** — one tap to warm white (3000 K, 70% brightness)
+- **Reading Mode** — toggle to warm white (3000 K, 70% brightness) and back;
+  a checkmark shows when it's active, and turning it off restores exactly
+  what the bulb was doing before you switched it on
+- **Default Scene** — a one-tap preset you configure yourself: dial the
+  bulb in however you like it with the other controls, then hold the
+  button to save it; tap to recall it any time
 - Brightness control (10–100%)
 - Color temperature control (2200–6500 K)
 - Effect speed control for animated scenes (10–200)
-- 11 curated scenes split into two types:
-  - *Static* (solid colour): Warm White, Daylight, Cool White, Night Light, Focus
-  - *Dynamic* (animated): Cozy, Relax, Candlelight, Fireplace, Wake Up, Bedtime
-- Per-scene customisation — save preferred brightness, colour temperature, or speed
-  per scene; scenes with saved settings are marked with *
+- 11 curated scenes, grouped into **Lighting Themes** (Warm White, Daylight,
+  Cool White, Night Light, Focus, Relax, Wake Up, Bedtime) and **Animated
+  Scenes** (Cozy, Candlelight, Golden White) — grouped by which scenes
+  genuinely animate, per WiZ's own per-scene compatibility reference, not
+  just a rough guess
+- Per-scene customisation — save whichever parameters a given scene actually
+  supports (brightness, colour temperature, and/or animation speed); scenes
+  with saved settings are marked with *
 - Named multi-bulb registry — save bulbs by room name and switch between them
 - Blink-to-verify discovery — the wizard blinks each found bulb so you can
   confirm which physical light you are adding
@@ -24,7 +32,7 @@ color temperature, and lighting scenes without leaving your book.
 ## Platform
 
 **Kindle only.** This plugin is designed for KOReader running on Kindle devices.
-The discovery mechanism requires `iptables` with root access, which Android's
+Talking to the bulbs requires `iptables` with root access, which Android's
 security model does not permit. The spirit of this plugin is to let you control
 your lights from your Kindle — without reaching for your phone.
 
@@ -35,8 +43,13 @@ your lights from your Kindle — without reaching for your phone.
 - No account, cloud service, or app required — the plugin communicates with
   your bulbs directly over your local network
 - The device must support `iptables` and KOReader must have permission to
-  modify firewall rules — the plugin opens a temporary rule during bulb
-  discovery to allow UDP responses from the network
+  modify firewall rules. Bulbs answer over UDP, and on a locked-down device
+  those answers can be dropped on the way back in — the command still
+  reaches the bulb and takes effect, but the plugin never hears the reply.
+  The plugin therefore adds two `ACCEPT` rules for UDP port 38899 (one for
+  each direction the replies can take) the first time it contacts a bulb,
+  and removes them again when KOReader closes. A session that never uses
+  the plugin never touches `iptables`.
 
 > **Note:** WiZ bulbs must be set up with the WiZ app at least once before
 > the plugin can discover them.
@@ -86,22 +99,33 @@ All controls are under **Tools → More Tools → WiZ Light**:
 | Entry | What it does |
 |---|---|
 | Toggle On / Off | Turns the active bulb on or off |
-| Reading Mode | Sets warm white (3000 K, 70%) |
-| Brightness… | Opens a dial to set brightness (10–100%) |
-| Color Temperature… | Opens a dial to set colour warmth (2200–6500 K) |
+| Default Scene | Tap to activate your saved preset; hold to save the bulb's current settings as the new preset |
+| Reading Mode - On / Reading Mode - Off | Toggles warm white (3000 K, 70%) and back; the label reflects the current state, and turning it off restores whatever the bulb was doing before |
+| Brightness… | Opens a dial pre-filled with the bulb's real current brightness (10–100%) |
+| Color Temperature… | Opens a dial pre-filled with the bulb's real current colour warmth (2200–6500 K) — some bulbs silently clamp a requested value below their own hardware minimum, so this always reflects what the bulb actually reports, not just the last value you asked for |
 | Effect Speed… | Opens a dial to set animation speed for dynamic scenes (10–200) |
-| Scenes | Opens the scenes panel |
+| Scenes | Opens the Lighting Themes / Animated Scenes chooser |
 | Settings → Manage Lights → Discover new lights… | Scan the network for WiZ bulbs |
 | Settings → Manage Lights → Add light by IP… | Add a bulb by entering its IP address directly |
 | Settings → Manage Lights | Switch between or remove saved bulbs |
+| Settings → Discovery Timeout… | Set how long a network scan runs (3–30s) |
+| Settings → Default Scene… | Configure the Default Scene directly — brightness first, then colour temperature — without needing the bulb to already show it |
 
 ### Scenes
 
-Tap a scene name to activate it. Tap **Edit…** next to a scene to customise it:
+Scenes are split into two groups so you're never guessing which ones
+animate:
 
-- All scenes: brightness
-- Static scenes (Warm White, Daylight, etc.): also colour temperature
-- Dynamic scenes (Cozy, Candlelight, etc.): also animation speed
+- **Lighting Themes** — fixed lighting moods (Warm White, Daylight, Cool
+  White, Night Light, Focus, Relax, Wake Up, Bedtime)
+- **Animated Scenes** — genuinely dynamic effects (Cozy, Candlelight, Golden
+  White)
+
+Tap a scene name to activate it. Tap **Edit…** next to a scene to customise
+whichever parameters that scene actually supports — most offer brightness,
+the plain white-tone themes also offer colour temperature, and the animated
+scenes also offer speed. (Night Light has neither adjustable brightness nor
+speed on real WiZ hardware, so it has no **Edit…** button at all.)
 
 Saved customisations are applied every time you activate that scene. A `*`
 appears next to scenes with saved customisations. Tap **Reset to defaults** in

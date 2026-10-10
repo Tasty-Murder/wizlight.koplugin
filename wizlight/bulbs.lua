@@ -29,6 +29,7 @@ function Bulbs.load()
         settings:saveSetting("bulbs", {})
         settings:saveSetting("order", {})
         settings:saveSetting("scene_overrides", {})
+        settings:saveSetting("reading_mode", {})
         settings:flush()
     end
 end
@@ -49,7 +50,7 @@ function Bulbs.getAll()
     local order = s():readSetting("order") or {}
     local bulbs = s():readSetting("bulbs") or {}
     local result = {}
-    for _i, mac in ipairs(order) do
+    for _, mac in ipairs(order) do
         if bulbs[mac] then
             table.insert(result, bulbs[mac])
         end
@@ -106,7 +107,7 @@ function Bulbs.remove(mac)
     settings:saveSetting("bulbs", bulbs)
 
     local new_order = {}
-    for _i, m in ipairs(order) do
+    for _, m in ipairs(order) do
         if m ~= mac then
             table.insert(new_order, m)
         end
@@ -117,6 +118,10 @@ function Bulbs.remove(mac)
         -- Promote first remaining bulb, or clear if none left
         settings:saveSetting("active", new_order[1])
     end
+
+    local reading_mode = settings:readSetting("reading_mode") or {}
+    reading_mode[mac] = nil
+    settings:saveSetting("reading_mode", reading_mode)
 
     settings:flush()
 end
@@ -154,6 +159,32 @@ function Bulbs.clearSceneOverride(scene_id)
     local overrides = settings:readSetting("scene_overrides") or {}
     overrides[scene_id] = nil
     settings:saveSetting("scene_overrides", overrides):flush()
+end
+
+--- Return the Reading Mode state for a bulb: { active = bool, saved = {...} }.
+-- `saved` is the setPilot params snapshot to restore when Reading Mode is
+-- turned back off; {} if none stored yet.
+function Bulbs.getReadingModeState(mac)
+    local reading_mode = s():readSetting("reading_mode") or {}
+    return reading_mode[mac] or { active = false, saved = {} }
+end
+
+--- Store the Reading Mode state for a bulb.
+function Bulbs.setReadingModeState(mac, active, saved)
+    local settings = s()
+    local reading_mode = settings:readSetting("reading_mode") or {}
+    reading_mode[mac] = { active = active, saved = saved or {} }
+    settings:saveSetting("reading_mode", reading_mode):flush()
+end
+
+--- Return the stored Default Scene params, or nil if never configured.
+function Bulbs.getDefaultScene()
+    return s():readSetting("default_scene")
+end
+
+--- Save the Default Scene params (a setPilot-safe params table).
+function Bulbs.setDefaultScene(params)
+    s():saveSetting("default_scene", params):flush()
 end
 
 --- Build a setPilot params table for the given scene, merging any stored overrides.
