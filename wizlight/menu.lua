@@ -11,9 +11,10 @@ local SpinWidget = require("ui/widget/spinwidget")
 local UIManager  = require("ui/uimanager")
 local _          = require("gettext")
 
-local Wiz   = require("wizlight.wiz")
-local Bulbs = require("wizlight.bulbs")
-local UI    = require("wizlight.ui")
+local Wiz     = require("wizlight.wiz")
+local Bulbs   = require("wizlight.bulbs")
+local UI      = require("wizlight.ui")
+local Updater = require("wizlight.updater")
 
 local Menu = {}
 
@@ -203,6 +204,12 @@ local function buildSettingsMenu(plugin)
         {
             text     = _("Show bulb state…"),
             callback = function() UI.showBulbState(plugin) end,
+        },
+        {
+            text     = _("Check for updates…"),
+            -- `path` is set on every plugin instance by KOReader's plugin
+            -- loader: the plugin's own directory, which is what gets replaced.
+            callback = function() Updater.checkForUpdates(plugin.path) end,
         },
     }
 end
