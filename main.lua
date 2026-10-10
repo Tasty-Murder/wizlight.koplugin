@@ -214,33 +214,34 @@ function WizLight:toggleReadingMode(bulb)
     end
 end
 
---- Activate `scene` on `bulb`. Clears Reading Mode's active state first —
---- the scene now fully replaces whatever Reading Mode had set, so leaving
---- Reading Mode marked "on" would be stale (its checkmark/label would lie,
---- and toggling it "off" would revert to the wrong thing).
-function WizLight:activateScene(bulb, scene)
+--- Reading Mode is marked "on" until something else fully replaces what it
+--- set; after that its checkmark/label would lie, and toggling it "off"
+--- would revert to the wrong thing. Only called once the replacement has
+--- actually landed — a command that never reached the bulb changed
+--- nothing, so Reading Mode is still what's showing.
+local function clearReadingMode(bulb)
     if Bulbs.getReadingModeState(bulb.mac).active then
         Bulbs.setReadingModeState(bulb.mac, false, nil)
     end
+end
+
+--- Activate `scene` on `bulb`.
+function WizLight:activateScene(bulb, scene)
     local params = Bulbs.buildSceneParams(scene.id)
     if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip) then
+        clearReadingMode(bulb)
         self:notify(string.format(_("Scene: %s"), scene.name))
     end
 end
 
 --- Activate the configured Default Scene, or point the user at how to set
---- one if they haven't yet. Clears Reading Mode's active state first, same
---- reasoning as activateScene() — Default Scene fully replaces whatever
---- was showing.
+--- one if they haven't yet.
 function WizLight:activateDefaultScene(bulb)
     local saved = Bulbs.getDefaultScene()
     if not saved then
         self:notify(_([[No default scene set yet.
 Hold "Default Scene" to save your current light settings as the default.]]), 5)
         return
-    end
-    if Bulbs.getReadingModeState(bulb.mac).active then
-        Bulbs.setReadingModeState(bulb.mac, false, nil)
     end
     -- Self-healing for defaults saved by older versions, without touching
     -- the stored value: those copied every getPilot key, so a default
@@ -251,6 +252,7 @@ Hold "Default Scene" to save your current light settings as the default.]]), 5)
     local params = Wiz.pilotToParams(saved)
     params.state = true
     if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip) then
+        clearReadingMode(bulb)
         self:notify(string.format(_("Default scene activated: %s"), Wiz.describeParams(params)), 4)
     end
 end
