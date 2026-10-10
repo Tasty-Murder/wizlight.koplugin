@@ -180,13 +180,9 @@ function WizLight:toggleBulb(ip)
 end
 
 -- Warm white 3000K at 70% brightness – comfortable for extended reading.
--- sceneId = 0 is deliberate: WiZ represents "no scene, plain white" as an
--- explicit sceneId of 0, not the absence of the field (confirmed against
--- real getPilot dumps for bulbs in plain CCT mode). Without it, activating
--- Reading Mode while a scene is running can leave the bulb still rendering
--- that scene — some scenes (Night Light among them) don't even report
--- dimming/temp back while active, so there's nothing to visibly change.
-local READING_MODE_PARAMS = { state = true, sceneId = 0, temp = 3000, dimming = 70 }
+-- The `temp` is also what takes the bulb out of any scene that's playing;
+-- no sceneId is needed, and sceneId = 0 is rejected (see Wiz.setPilot).
+local READING_MODE_PARAMS = { state = true, temp = 3000, dimming = 70 }
 
 --- Toggle Reading Mode for `bulb`. Activating snapshots the bulb's current
 --- state so it can be restored; deactivating restores that snapshot.
@@ -257,8 +253,8 @@ Hold "Default Scene" to save your current light settings as the default.]]), 5)
     -- the stored value: those copied every getPilot key, so a default
     -- captured during a scene asks for the scene *and* a colour
     -- temperature, and one captured with the bulb off would switch it off.
-    -- pilotToParams keeps one coherent mode (and adds sceneId=0 to plain
-    -- white, which very old saves lacked).
+    -- pilotToParams keeps one coherent mode (and drops the sceneId=0
+    -- that versions before this one stored and sent).
     local params = Wiz.pilotToParams(saved)
     params.state = true
     if self:send(function(ip) return Wiz.setPilot(ip, params) end, bulb.ip,

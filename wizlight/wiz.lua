@@ -19,8 +19,6 @@ local TIMEOUT  = 3    -- total seconds to wait for a reply, across retries
 local POLL     = 0.25 -- how long each individual receive blocks for
 local RESEND   = 0.5  -- resend the datagram this often while waiting
 
--- Error codes the bulb reports JSON-RPC style.
-local ERR_INVALID_PARAMS = -32602
 -- Our own marker for "the bulb answered but refused", used where there is
 -- no code of its own to pass along. Any code at all tells a caller the
 -- bulb is reachable, which is the distinction that matters to them.
@@ -147,24 +145,16 @@ function Wiz.getPilot(ip)
 end
 
 --- Send a `setPilot` request with the given params table.
--- Firmware disagrees about `sceneId = 0` ("no scene, plain white"): older
--- builds want it spelled out to leave scene mode, while newer ones reject
--- the whole command with "Invalid params" when it's present. Neither is
--- detectable up front, so send the explicit form first and fall back to
--- dropping sceneId if — and only if — the bulb rejects it outright. A
--- rejection is detectable; "accepted but ignored" would not be.
+--
+-- Never put `sceneId = 0` in `params`. WiZ's own local-control library
+-- only accepts sceneId 1–150, and firmware since mid-2020 answers
+-- "Invalid params" to it (homebridge-wiz-lan #6/#7). Leaving a scene
+-- needs no special field: a setPilot carrying `temp` or `r`/`g`/`b`
+-- switches the bulb to that mode by itself, which is how WiZ's library,
+-- pywizlight, openHAB and homebridge-wiz-lan all do it.
 function Wiz.setPilot(ip, params)
     local msg = rapidjson.encode({ method = "setPilot", params = params })
     local decoded, err, code = sendUDP(ip, msg, "setPilot")
-
-    if not decoded and code == ERR_INVALID_PARAMS and params.sceneId == 0 then
-        local retry = {}
-        for key, value in pairs(params) do retry[key] = value end
-        retry.sceneId = nil
-        logger.info("wizlight: bulb rejected sceneId=0, retrying without it")
-        decoded, err, code = sendUDP(ip, rapidjson.encode({ method = "setPilot", params = retry }),
-            "setPilot")
-    end
 
     -- Propagate the code: callers distinguish "the bulb never answered"
     -- from "the bulb answered and refused", which want different handling.
@@ -198,14 +188,10 @@ function Wiz.setBrightness(ip, dimming)
 end
 
 --- Set white colour temperature.  `temp` is in Kelvin (2200–6500).
--- sceneId = 0 is required, not optional: a colour temperature is
--- meaningless while a scene is rendering its own colours, and the official
--- WiZ per-scene compatibility table has an "Adjustable dimming" column but
--- no adjustable-temp one at all. Without explicitly leaving scene mode,
--- a temp-only setPilot has nothing to act on and the scene keeps playing,
--- so the change silently never lands.
+-- Sending `temp` is itself what takes the bulb out of a running scene (see
+-- setPilot), so this also works while a scene is playing.
 function Wiz.setColorTemp(ip, temp)
-    return Wiz.setPilot(ip, { state = true, sceneId = 0, temp = temp })
+    return Wiz.setPilot(ip, { state = true, temp = temp })
 end
 
 --- Set the animation speed for dynamic scenes. speed is an integer 10–200.
@@ -246,6 +232,10 @@ local RGBCW_KEYS = { "r", "g", "b", "c", "w" }
 --- Also safe to run on an already-converted table (it's idempotent), which
 --- lets snapshots stored by older versions be cleaned up on the way out.
 function Wiz.pilotToParams(result)
+    -- getPilot reports "no scene" as sceneId 0 (or, on some firmware, not
+    -- at all); setPilot must never be sent a 0 (see setPilot). So the
+    -- sceneId is copied only when it names a real scene, and a stored
+    -- snapshot from an older version that carried sceneId=0 loses it here.
     local params = { state = result.state, dimming = result.dimming }
     local scene = result.sceneId
     if result.schdPsetId then
@@ -257,15 +247,17 @@ function Wiz.pilotToParams(result)
         params.sceneId = scene
         if DYNAMIC_SCENES[scene] then params.speed = result.speed end
     elseif result.temp then
-        params.sceneId = 0
         params.temp = result.temp
     else
         for _, key in ipairs(RGBCW_KEYS) do
-            if result[key] ~= nil then
-                params.sceneId = 0
-                params[key] = result[key]
-            end
+            params[key] = result[key]
         end
+        -- The payload firmware began rejecting in 2020 was
+        -- `"sceneId":0,"c":0,"w":0`, and which of the three it objected to
+        -- was never pinned down. A zero white channel adds nothing to an
+        -- RGB colour, so don't send one.
+        if params.c == 0 then params.c = nil end
+        if params.w == 0 then params.w = nil end
     end
     return params
 end
@@ -282,8 +274,8 @@ function Wiz.describeParams(params)
     -- A snapshot of a switched-off bulb still carries its colour settings;
     -- without this it would read as though the light had been on.
     if params.state == false then table.insert(parts, "off") end
-    -- sceneId 0 is WiZ's way of saying "no scene, plain white", and this
-    -- plugin now sends it deliberately — rendering it as "scene 0" would
+    -- sceneId 0 is how getPilot says "no scene"; defaults stored by older
+    -- versions can still carry it. Rendering it as "scene 0" would
     -- describe the exact opposite of what it means.
     if params.sceneId and params.sceneId ~= 0 then
         table.insert(parts, "scene " .. params.sceneId)
