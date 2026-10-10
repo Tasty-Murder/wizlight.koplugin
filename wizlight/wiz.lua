@@ -53,7 +53,13 @@ local function sendUDP(ip, message, expect_method)
     local udp = socket.udp()
     udp:settimeout(POLL)
 
-    local ok, send_err = udp:sendto(message, ip, WIZ_PORT)
+    -- Connect the socket to the bulb, as pywizlight does. The kernel then
+    -- only delivers datagrams from ip:38899 to it, so a reply from another
+    -- bulb (or anything else that finds this port) can never be taken for
+    -- this one's — the method check below can't tell two bulbs' getPilot
+    -- answers apart. Same reasoning as probe()'s source-address check.
+    local ok, send_err = udp:setpeername(ip, WIZ_PORT)
+    if ok then ok, send_err = udp:send(message) end
     if not ok then
         udp:close()
         return nil, send_err
@@ -64,7 +70,16 @@ local function sendUDP(ip, message, expect_method)
     local next_send = socket.gettime() + RESEND
 
     while socket.gettime() < deadline do
-        local data = udp:receive()
+        local data, recv_err = udp:receive()
+        if not data and recv_err ~= "timeout" then
+            -- A connected socket also hears ICMP errors, e.g. "connection
+            -- refused" when nothing listens at that address any more.
+            -- Keep trying until the deadline, but report what we saw.
+            -- Such an error returns at once rather than after POLL, so
+            -- wait out the poll interval to avoid spinning the CPU.
+            last_err = recv_err
+            socket.sleep(POLL)
+        end
         if data then
             local decoded, decode_err = rapidjson.decode(data)
             if not decoded then
@@ -93,7 +108,7 @@ local function sendUDP(ip, message, expect_method)
         -- duplicate that does arrive re-applies the same result.
         local now = socket.gettime()
         if now >= next_send then
-            udp:sendto(message, ip, WIZ_PORT)
+            udp:send(message)
             next_send = now + RESEND
         end
     end
