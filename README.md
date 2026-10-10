@@ -63,6 +63,9 @@ your lights from your Kindle — without reaching for your phone.
    (connect via USB and paste alongside the other plugin folders).
 4. Restart KOReader.
 
+Once installed, later versions can be installed from the device itself via
+**WiZ Light → Settings → Check for updates…** (needs Wi-Fi with internet access).
+
 The plugin appears as **WiZ Light** under **Tools → More Tools**.
 
 ## Adding your first bulb
@@ -110,6 +113,7 @@ All controls are under **Tools → More Tools → WiZ Light**:
 | Settings → Manage Lights | Switch between or remove saved bulbs |
 | Settings → Discovery Timeout… | Set how long a network scan runs (3–30s) |
 | Settings → Default Scene… | Configure the Default Scene directly — brightness first, then colour temperature — without needing the bulb to already show it |
+| Settings → Check for updates… | Checks GitHub for a newer release and, if there is one, downloads and installs it (restart KOReader afterwards). Your bulbs and settings are kept |
 
 ### Scenes
 

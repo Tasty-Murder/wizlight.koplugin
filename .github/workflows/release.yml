@@ -18,6 +18,20 @@ jobs:
         with:
           fetch-depth: 0  # git-cliff needs full history to read all tags
 
+      # The in-app updater installs a release only when the version inside
+      # the zip's _meta.lua equals the tag (anything else is treated as a
+      # bad download). A tag pushed without bumping _meta.lua would publish
+      # a release nobody can install from the device, so stop here instead.
+      - name: Check tag matches _meta.lua version
+        run: |
+          META_VERSION=$(sed -n 's/^ *version *= *"\([^"]*\)".*/\1/p' _meta.lua)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "_meta.lua: $META_VERSION, tag: $TAG_VERSION"
+          if [ "$META_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match _meta.lua version $META_VERSION"
+            exit 1
+          fi
+
       - name: Generate changelog
         id: git-cliff
         uses: orhun/git-cliff-action@v4
@@ -36,6 +50,7 @@ jobs:
           rm -rf /tmp/release/wizlight.koplugin/docs
           rm -rf /tmp/release/wizlight.koplugin/.claude
           rm -f  /tmp/release/wizlight.koplugin/.gitignore
+          rm -f  /tmp/release/wizlight.koplugin/.luacheckrc
           rm -f  /tmp/release/wizlight.koplugin/cliff.toml
           rm -f  /tmp/release/wizlight.koplugin/README.md
           rm -f  /tmp/release/wizlight.koplugin/CHANGES.md
